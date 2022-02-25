@@ -47,6 +47,7 @@ Copyright (c) 2019 by Harry Mangalam <hjmangalam@gmail.com>
           <https://github.com/martymac/fpart>
       - perfquery < hal.rosenstock [at] gmail.com >
       - ibstat < hal.rosenstock [at] gmail.com >
+		- scut and stats (Harry Mangalam), <hjmangalam@gmail.com>
       - and many standard Linux utilities, any one of which could change 
           output format at any time and hobble parsyncfp. These include:
           ifconfig, ethtool, iwconfig, netstat, route, cat, ls, awk, grep, 

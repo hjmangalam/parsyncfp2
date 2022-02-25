@@ -1,300 +1,144 @@
-# parsyncfp
-a parallel rsync wrapper in Perl. Released under GPL v3.
+# parsyncfp2
+a MultiHost parallel rsync wrapper writ in Perl. 
+by Harry Mangalam <hjmangalam@gmail.com>
+Released under GPL v3.
 
-(Version changes moved to the bottom of this file)
-
-## See Changes at bottom.  
+(Changes moved to the bottom of this file)
 
 ## Background
 
-parsyncfp (pfp) is the offspring of my [parsync](https://github.com/hjmangalam/parsync) 
- ([more info here](http://moo.nac.uci.edu/~hjm/parsync/))
- and Ganael LaPlanche's [fpart](http://goo.gl/K1WwtD), which
-collects files based on size or number into chunkfiles which can be fed to rsync on a 
-chunk by chunk basis.  This allows pfp to begin transferring files before the 
-complete recursive descent of the source dir is complete.  This feature can save many 
-hours of prep time on very large dir trees.
-
-If your use involves transit over IB networks, parsyncfp requires 'perfquery' and 'ibstat', 
-Infiniband utilities both written by Hal Rosenstock < hal.rosenstock [at] gmail.com > 
-
-pfp is primarily tested on Linux, but is being ported to MacOSX
-as well, tho admittedly slowly.
-
-pfp needs to be installed only on the SOURCE end of the 
-transfer and only works in local SOURCE -> remote TARGET mode 
-(it won't allow remote local SOURCE <- remote TARGET, emitting an 
-error and exiting if attempted). It requires that ssh shared keys be
-set up prior to operation [see here](https://goo.gl/ghCazV).  If it detects 
-that ssh keys are NOT set up correctly, it will ask for permission to try
-to remedy that situation.  Check your local and remote ssh keys to make
-sure that it has done so correctly.  Typically, they're in your ~/.ssh dir.
-
-It uses whatever rsync is available on the TARGET.  It uses a number 
-of Linux-specific utilities so if you're transferring between Linux 
-and a FreeBSD host, install parsyncfp on the Linux side. 
-
-The only native rsync options that pfp uses is '-a' (archive) &
-'-s' (respect odd characters in filenames).  If you need to define 
-the rsync options differently, then it's up to you to define ALL of 
-them via '--rsyncopts' (the default '-a -s' flags will NOT be provided 
-automatically.
-
-pfp checks to see if the current system load is too heavy and tries
-to throttle the rsyncs during the run by monitoring and suspending / 
-continuing them as needed. There is a 'suspend.log' file in the 
-~/.parsyncfp dir that tracks these transitions.
-
-It appropriates rsync's bandwidth throttle mechanism, using '--maxbw'
-as a passthru to rsync's 'bwlimit' option, but divides it by NP so
-as to keep the total bw the same as the stated limit.  It monitors and
-shows network bandwidth, but can't change the bw allocation mid-job.
-It can only suspend rsyncs until the load decreases below the cutoff.
-(If you suspend parsyncfp (^Z), all rsync children will suspend as well,
-regardless of current state.)
-
-Unless changed by '--interface', it tries to figure out how to set the 
-interface to monitor.  The transfer will use whatever interface routing 
-provides, normally set by the name of the target.  It can also be used for 
-non-host-based transfers (between mounted filesystems) but the network 
-bandwidth continues to be (usually pointlessly) shown.
-
-NB: Between mounted filesystems, parsyncfp sometimes works very poorly for
-reasons still mysterious.  In such cases (monitor with 'ifstat'), use 'cp'
-or [tnc](https://goo.gl/5FiSxR) for the initial data movement and a single
-rsync to finalize.  I believe the multiple rsync chatter is interfering with 
-the transfer.
-
-It only works on dirs and files that originate from the current dir (or
-specified via "--startdir").  You cannot include dirs and files from
-discontinuous or higher-level dirs.
-
-## the ~/.parsyncfp files 
-The cache dir (~/.parsyncfp by default) contains the fpcache dir which holds the 
-fpart log and all the PID files as well as the chunk files (f*).   parsyncfp no 
-longer provides cache reuse because the fpart chunking is so fast.  The log files are
-datestamped and are NOT overwritten.  A new option allows you to specify alternative
-locations for the cache as well as specifying locations for multiple instances so that
-many parsyncfps can run at the same time, altho they will detect each others' 
-fparts running and question this situation.
-
-## Odd characters in names
-parsyncfp will sometimes refuse to transfer some oddly named files, altho 
-recent versions of rsync allow the '-s' flag (now a parsyncfp default) 
-which tries to respect names with spaces and properly escaped shell 
-characters.  Filenames with embedded newlines, DOS EOLs, and other 
-odd chars will be recorded in the log files in the ~/.parsyncfp dir.
-
-##  Debugging
-To see where you (or I) have gone wrong, look at the 
-rsync-logfile\* logs in the .parsyncfp dir.  If you're a masochist, use
-the '--debug' flag which will spew lots of gratuitous info
-to the screen and pause multiple times to allow checking of intermediate 
-results.
-
-## Options
-
-[i] = integer number<br>
-[f] = floating point number<br>
-[s] = "quoted string"<br>
-( ) = the default if any<br>
-The syntax 'longarg|shortarg' means that either the long or short form may 
-be used to denote that option.<br>
-
-- --NP|np [i] (sqrt(#CPUs)) : number of rsync processes to start optimal NP depends on many vars.   Try the default and incr as needed
-- --altcache|ac (~/.parsyncfp) : alternative cache dir for placing it on a another FS or for running multiple  parsyncfps simultaneously
-- --startdir|sd [s] (`pwd`) : the directory it starts at(*)
-- --maxbw [i] (unlimited) : in KB/s max bandwidth to use (--bwlimit  passthru to rsync).  maxbw is the total BW to be used, NOT per rsync.
-- --maxload|ml [f] (NP+2)  :  max system load - if sysload > maxload, an rsync proc will sleep for 10s
-- --chunksize|cs [s] (10G) : aggregate size of files allocated to one rsync  process.  Can specify in 'human' terms [100M, 50K, 1T] as well as integer bytes.
-- --rsyncopts|ro [s] : options passed to rsync as quoted string (CAREFUL!) this opt triggers a pause before executing to verify the command(+)
-- --fromlist|fl [s]  \
-- --trimpath|tp [s]   +-- see "Options for using filelists" below
-- --trustme|tm       /
-- --interface|i [s] : network interface to monitor (not use; see above)
-- --checkperiod|cp [i] (5) : sets the period in seconds between updates
-- --verbose|v [0-3] (2) : sets chattiness. 3=debug; 2=normal; 1=less; 0=none.    This only affects verbosity post-start; warning & error messages will still be printed.
-- --dispose|d [s] (l) : what to do with the cache files. (l)eave untouched, (c)ompress to a tarball, (d)elete.
-- --email [s] : email address to send completion message
-- --nowait  :  for scripting, sleep for a few s instead of pausing
-- --version : dumps version string and exits
-- --help : this help
-
-##  Options for using filelists
-
-(thanks to Bill Abbott for the inspiration/guidance).
-
-The following 3 options provide a means of explicitly naming the files
-you  wish to transfer by means of filelists, whether by 'find' or other
-means. Typically, you will provide a list of files, for example generated
-by a DB lookup (GPFS or Robinhood) with full path names.  If you use
-this list directly with rsync, it will remove the leading '/' but then
-place the file with that otherwise full path inside the target dir. So
-'/home/hjm/DL/hello.c' would be placed in '/target/home/hjm/DL/hello.c'.  
-If this result is OK, then simply use the '--fromlist' option to specify 
-the file of files.
-
-If the list of files are NOT fully qualified then you should make sure
-that the command is run from the correct dir so that the rsyncs can find
-the designated dirs & files.
-
-If you want the file 'hello.c' to end up as '/target/DL/hello.c' (ie
-remove the original '/home/hjm'), you would use the --trimpath option
-as follows: '--trimpath=/home/hjm'.  This will remove the given path
-before transferring it and assure that the file ends up in the right
-place.  This should work even if the command is executed away from the
-directory where the files are rooted. If you have already modified the
-file list to remove the leading dir path, then of course you don't need
-to use '--trimpath' option.
-
-- --fromlist|fl [s] : take explicit input file list from given file, 
-                        1 path name per line.
-- --trimpath|tp [s] : path to trim from front of full path name if 
-                        '--fromlist' file contains full path names and 
-                        you want to trim them.
-- --trustme|tm : with '--fromlist' above allows the use of file lists of the form:
-                        
-                        size in bytes<tab>/fully/qualified/filename/path  
-                        825692            /home/hjm/nacs/hpc/movedata.txt
-                        87456826          /home/hjm/Downloads/xme.tar.gz
-                        etc
-                        
-This allows lists to be produced elsewhere to be
-                        fed directly to pfp without a file stat() or
-                        complete recursion of the dir tree.  So if
-                        you're using an SQL DB to track your filesystem
-                        usage like Robinhood or a filesystem like GPFS
-                        that can emit such data, it can save some
-                        startup time on gigantic file trees.
-
-## Examples
-
-### Good Example 1
-```
-% parsyncfp  --maxload=5.5 --NP=4 \
---chunksize=\$((1024 * 1024 * 4)) \
---startdir='/home/hjm' dir[123]  \
-hjm\@remotehost:~/backups
-
-```
-
-where:
-
-- "--maxload=5.5" will start suspending rsync instances when the 5m system load gets to 5.5 and then unsuspending them when it goes below it.
-- "--NP=4" forks 4 instances of rsync
-- "chunksize=$((1024 * 1024 * 4))" defines the chunksize as the product of numbers (equalling 4MB)
-- "--startdir='/home/hjm'" sets the working dir of this operation to '/home/hjm' and dir1 dir2 dir3 are subdirs from '/home/hjm'
-- the target "hjm\@remotehost:~/backups" is the same target rsync would use
-
-It uses 4 instances to rsync dir1 dir2 dir3 to hjm@remotehost:~/backups
+NB: If you don't want to transfer at least 10s of GB across a network, this is probably not the the tool you want.  Use rsync alone if you need or will need a sync operation, or scp if the data needs to be encrypted.
 
 
-### Good Example 2
+parsyncfp2 (aka pfp2) is the next generation of the family that started with [parsync](https://github.com/hjmangalam/parsync), which with Ganael LaPlanche's [fpart](http://goo.gl/K1WwtD), begat [parsyncfp](https://github.com/hjmangalam/parsyncfp) (aka pfp), which has further mutated into the MultiHost multi-send, multi-receive organism unimaginatively called parsyncfp2.
 
-```% parsyncfp   --checkperiod 6  --NP 3 \
---interface eth0  --chunksize=87682352 \
---rsyncopts="--exclude='[abc]*'"  nacs/fabio   
-hjm\@moo:~/backups
-```
+Like parsyncfp, which uses fpart to aggregate files into chunks (or partitions) to allocate to individual rsyncs, pfp2 operates similarly. The main difference between them is that pfp2 can spread the send and receive functions among multiple hosts (with a shared filesystem required on the sending side.)
+As with pfp, it collects files based on aggregate size into chunkfiles which can be fed to rsync on a chunk by chunk basis.  This allows pfp to begin transferring files before the 
+complete recursive descent of the source dir is complete.  This feature can save many hours of prep time on very large dir trees.  In addition, pfp2 can re-use the chunkfiles so generated so if there's an interruption, you can skip the re-generation of the chunkfile list (which is pretty fast, but for a PB filesystem can still take a long time and generate a lot of competing IO)
 
-where
+If your use involves transit over IB networks, parsyncfp requires 'perfquery' and 'ibstat', Infiniband utilities written by Hal Rosenstock < hal.rosenstock [at] gmail.com > 
 
-- "--checkperiod 6" - defines a 6s cycle time between updates
-- "--NP 3" - requests 3 instances of rsync 
-- "--interface eth0" - requests that the eth0 interface be monitored explicitly
-- "--chunksize=87682352" - shows that the chunksize option can be used with explicit
-integers as well as the human specifiers (TGMK).
-- --rsyncopts="--exclude='[abc]*'" - shows the correct form for excluding files
-based on regexes (note the quoting)
-- nacs/fabio - shows that you can specify subdirs as well as top-level dirs (as
-long as the shell is positioned in the dir above, or has been specified via
-'--startdir'
+pfp2 is tested on Linux.  The MacOSX port is in hibernation.
 
-### Good Example 3
+pfp2 needs to be installed only on the SOURCE end of the 
+transfer and only works in local SOURCE -> remote TARGET mode (it won't allow remote local SOURCE <- remote TARGET, emitting an error and exiting if attempted). It requires that ssh shared keys be set up prior to operation [see here](https://goo.gl/ghCazV).  If it detects that ssh keys are NOT set up correctly, it will ask for permission to try to remedy that situation.  Check your local and remote ssh keys to make sure that it has done so correctly.  Typically, they're in your ~/.ssh dir.
 
-```
-% parsyncfp -v 1 --nowait --ac pfpcache1 --NP 4 \
---cp=5 --cs=50M --ro '-az' linux-4.8.4 moo:~/test
-```
-
-where
-
-- short version of several options (-v for --verbose, --cp for checkperiod, etc)
-- shows use of --altcache (--ac pfpcache1), writing to relative dir pfpcache1
-- again shows use of --rsyncopts (--ro '-az') indicating 'archive' & compression'.
-- includes '--nowait' to allow unattended scripting of parsyncfp
+It uses whatever rsync is available on the TARGET.  It uses a number of Linux-specific utilities so if you're transferring between Linux and a FreeBSD host, install pfp2 on the Linux side. 
 
 
-###  Good example 4
-```
-parsyncfp --NP=8 --chunksize=500M --fromlist=/home/hjm/dl550 \
-hjm@moo:/home/hjm/test
-```
 
-where
+## Installation
+Installation of 'parsyncfp2' is fairly simple.  There's not yet a deb or rpm package, but the bits to make it work  that are not part of a fairly standard Linux distro are the Perl scripts *parsyncfp2*, *scut* (like cut but a bit more flexible), and *stats* (spits out descriptive statistics of whatever is fed to it).  
+The rest of the dependents are listed here:
 
-- if you use the '--fromlist' option, you cannot use explicit source dirs
-  (all the files come from the file of files (which require full path names)
-- that the '--chunksize' format can use human abbreviations (M or m for Mega).
+- **Debian/Ubuntu-like:**
+
+    sudo apt install ethtool iproute2 fpart iw libstatistics-descriptive-perl infiniband-diags
+
+    git clone https://github.com/hjmangalam/parsyncfp2 
+
+    cd parsyncfp2; cp parsyncfp2 scut stats ~/bin
 
 
-### Error Example 1
+- **RHel/Centos/Rocky-like:**
 
-```
-% pwd
-/home/hjm  # executing parsyncfp from here
+    sudo yum install iw fpart ethtool iproute perl-Env.noarch  \
+    perl-Statistics-Descriptive wireless-tools infiniband-diags
 
-% parsyncfp --NP4 --compress /usr/local  /media/backupdisk
-```
+    git clone https://github.com/hjmangalam/parsyncfp2
 
-Why this is an error:
+    cd parsyncfp2; cp parsyncfp2 scut stats ~/bin
 
-- '--NP4' is not an option (parsyncfp will say "Unknown option: np4")
-    It should be '--NP=4'
-- if you were trying to rsync '/usr/local' to '/media/backupdisk', 
-    it will fail since there is no /home/hjm/usr/local dir to use as 
-    a source. This will be shown in the log files in 
-    ~/.parsyncfp/rsync-logfile-<datestamp>_#
-    as a spew of "No such file or directory (2)" errors
-- the '--compress' is a native rsync option, not a native parsyncfp option.
-    You have to pass it to rsync with "--rsyncopts='--compress'"
 
-The correct version of the above command is:
+### Required utilities and packages
+Should the above commands not fulfill the requirements or be missing from your set of repositories, the utilities are listed below.
 
-```% parsyncfp --NP=4  --rsyncopts='--compress' --startdir=/usr  local  /media/backupdisk```
+- ethtool - query or control network driver and hardware settings. Install via repository.
+- ip - show / manipulate routing, network devices, interfaces and tunnels. Install via repository.
+- fpart - Sort and pack files into partitions. Now in many distro repositories, or install from [the fpart github](https://github.com/martymac/fpart); 
+- scut - a more intelligent cut.  Included in the parsyncfp2 github
+- stats - calculate descriptive stats from STDIN. Included in the parsyncfp2 github
+- Perl::Descriptive-Statistics - basic descriptive statistical functions
 
-### Error Example 2
-```% parsyncfp  hjm\@moo.boo.yoo.com:/usr/local --start-dir /home/hjm mooslocal
-```
 
-Why this is an error:
+### Recommended Utilities
 
-- this command is trying to PULL data from a remote SOURCE to a 
-    local TARGET.  parsyncfp doesn't support that kind of operation yet.
-    
-The correct version of the above command is:
+- iwconfig - configure a wireless network interface. Needed only for WiFi. Install via repository.
+- perfquery - query InfiniBand port counters.  Needed only for InfiniBand. Install via repository.
+- udr (experimental) - utility to send packets via UDP using the UDT library.  Required for the --udr option. Install via [github](https://github.com/martinetd/UDR)
 
-``` # ssh to hjm\@moo, install parsyncfp, then:
-% parsyncfp  --startdir=/usr  local  hjm\@remote:/home/hjm/mooslocal 
-```
 
-### Error Example 3
 
-```% parsyncfp --NP=4 --chunksize=500M -startdir=/usr/local/bin hjm\@remote.host.edu:/home/backups
-```
-
-Why this is an error:
-
-- you've specified a 'startdir' but haven't specified the dirs or files 
-to be transferred.
-
-The correct version of the above command is:
-```% parsyncfp --NP=4 --chunksize=500M -startdir=/usr/local bin hjm\@remote.host.edu:/home/backups
-```
-
+For expanded description of operation and commandline options please see the HTML manual that should be in the same directory:
+**parsyncfp2-manual.html**
 
 
 ## Changes
+
+### 2.43
+- removed the option of calling it '--rsyncopts', now just --ro to prevent the regex mistakes as in the past.
+
+### 2.42
+- add --skipto  - esp useful with --reuse to skip to that chunk without wading thru all the intervening fpart chunks and rsyncs.  Could save minutes to 10s of min in restarting a huge transfer, especially if the network has significant delay and the --slowdown delay is significant. 
+so --reuse and skipto are both required and just set the CUR_FPI to that number.
+
+- collapse --reuse and --skipto into --reusechunk:i  makes more sense.
+
+### 2.41
+- debugged weird ssh/RTT errors, introduced --slowdown and internal routine to ping to REC hosts to figure out how slow the connection was and compensate with some delays in starting new ssh connections.  Seems to have addressed teh problem.
+
+### 2.40 
+- Check generation of MHplotfile.sh - it doesn't pick up the user@host  designation and munges the 2 together so it drops out any data that has a user@host send or rec bc it's not parsing the data correctly (I think).
+- forbid MH rsyncs on a mounted FS for now
+
+### 2.39
+- debugged the weird tailoff in bandwidth.  It's the remote firewall interpreting numerous ssh's as an attack and blacklisting me.  OK - off to iter we go..
+
+### 2.38
+- Corrected some bad logic in the main rsync startup loop.  subtracting the stride instead of adding it, and some other stuff.  Ugly.  The failing rsyncs were mostly due to a bad creation of the chunk file paths that in some cases prefixed the 'home/pfp' argument to the file path, so you ended up with /home/pfp/home/pfp/..(fqfn). Also corrected the hanging rsync error - the check is picking up 'parsync' and the --rsyncopts option. Plain stupid.
+
+### 2.37
+
+- test if --hosts, has to be a POD:: as target (!)
+
+- at exit, should re-emit the complete calling commandline as a reminder.
+
+- if specify chunk size larger than a single chunk, no erros emitted and it just runs ad infinitum.
+      so needs to check if max number of chunks when FPART_DONE < number of chunks, emit WARNING.
+      
+- get_nbr_chunk_files() is really expensive in terms of FS activity.  Should look at this to reduce the number of calls. OK - removed 2.
+
+### 2.3
+- renamed to parsyncfp2 from pfppod and cleared deps for the name change.
+
+### 2.00 - 2.39
+- so many changes, lost track.  Mostly small thinkos but in aggregate a lot of cleanup.  thanks to ITER for hosting a lot of network testing.
+
+
+### 2.00 (as pfppod)
+(Multihost ITERation) Apr 22, 2021. Lots of changes...
+
+- added multihost capability.  Can send via multiple SEND hosts to multiple REC hosts, 
+with multiple REC paths if wanted.
+    - with --hostcheck, multihost version pushes all required scripts to targets for better 
+    reliability, checks rsync status on remote hosts.
+    - stat remote ~/.ssh/config file to warn about conflicting ssh-defined hostnames
+    - added --rpath to set remote PATHs (tho may deprecate)
+    - the multiple hosts store their logs in /hostname/ subdirs in the cache dir so they're 
+    more easily separable
+- removed prohibition of using '~' to denote remote HOME targets.  I think this has no more use.
+- incorporated Chris Rapier's code to remove the long ls output, leading to crashes with processing 
+zillions of fpart chunk files (but left the warnings about too many of them).
+- considerable code cleanup, tho you'd be hard-pressed to tell.
+- mod debug() to be more useful.
+- added --udr to support UDP-transport supposedly good for increasing large file transport.
+works on local nets, but not much better than normal.  Need much longer rtt networks to test on.
+udr is not in repositories, so users have to add it for now.
+- multihost version still works as single host version
+- side effect of multihost version: SEND hosts are completely independent; need to add socket 
+control to suspend/kill/cleanup/pass info
+
+
 ### 1.72 
 (California Lockdown) Dec 6, 2020, No option changes.  Intercepted rsync options to forbid 
 those that increase verbosity to avoid collision with pfp's IO handling. 

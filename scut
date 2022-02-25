@@ -1,0 +1,882 @@
+#!/usr/bin/env perl
+# scut v1.30 and above is released under the GNU General Public License v 3.0.
+# That license can be found at: <http://www.gnu.org/licenses/gpl.html>
+# I'd appreciate a note if you find it useful or find/fix a bug, or can
+# offer a suggestion.
+
+# don't forget!!  using git!
+# git add  scut                # stage the file for the commit
+# git commit -m 'commit message'    # stages the commit
+# git push                          # pushes the commit to github
+
+# kick it to moo, dabrick, 
+# export filename="/home/hjm/bin/scut"; scp ${filename} moo:~/public_html; scp ${filename} moo:~/bin;  
+# scp ${filename}   dabrick:~/bin; ssh moo 'scp bin/scut hmangala@hpcs:~/bin'
+# cd ~/gits/scut; cp ~/bin/scut .; git add scut; git commit -m 'commit message'; git push
+
+
+
+# Version 1.38
+# Changes:
+#   1.39   05-05-21 - writing .scutjunk in a non-writable dir won;t work.  redirected to user HOME
+#   1.38   04-27-19 - fixed broken Excel numbering so it now works. "a e b e f" -> "0 4 1 4 5"
+#   1.37   11-11-17 - detect no piped input on STDIN and emit an identifying line.
+#   1.36   07-25-17 - minor mods, hints to help file
+#   1.35   03-18-15 - drop a dotfile when there's no statistics module so the messages
+#                     don't repeat.
+#   1.34   01-06-12 - added -f as alias to --c1 and -d as alias to --id1
+#                     for better 'cut' compatibility
+#   1.33   07-27-10 - corrected code in column_ranges() so '0' is considered a (+) # for col selection purposes.  Otherwise spec'ing the 0th col gets ignored.
+#   1.32   05-12-10 - code for catching absent values in input files;
+#                     added --labels option.to label columns
+#   1.31   04-16-10 - Changed License to GPL3
+#   1.30   04-09-10 - Added native Excel handling via Spreadsheet::Excel
+#   1.22   12-08-09 - finally 'use strict'ed; added less thingy for help, dumped help
+#                     if no ARGV[0],
+#   1.21   11-18-09   added nifty column output selection options
+#   1.20   02-01-09 - changed default error reporting to only if requested
+#                     verified that original 'join' function still worked.
+#                     corrected help file to be more clear.
+#   1.18   10.30.08 - added excel 'CSV' format parsing to ease transition from Excel
+#   1.17   10.29.08 - much code & debugging to parse columns with sub column_ranges()
+#   1.16   09.11.08 - minor changes to the stats bits.
+#   1.15   09.30.06 - mod the --help option to dump help if entered without arguments
+#   1.15   04.21.06 - added --stats option to generate descriptive stats for numeric columns
+#   1.14   03.30.06 - added --mod_col option
+#   1.13   03.29.06 - made tabs easier to handle and added the comments passthru
+#   1.12   10.15.02 - fixed bad test for begin & end, final tab on output (stupid misuse of substr)
+#   1.11   10.07.02 - add offset capability to slice out sections of a file for processing.
+#                     --begin='regex|#' --end='regex|#'
+#                     also, if scut is called with no args, should dump help
+#   1.10   10.02.02 - added ability to use alphabetic/excel-type column IDs rather than
+#                     explicit numbers to make it easier to convert from spreadsheet
+#                     notation to 0-based notation
+#   1.06    5.30.02 - changed name to scut from the original 'mergem'
+#                     for 'smarter cut', the util that performs scut work for you
+#                     some typos fixed, some text clarified.
+#           9.14.01 - added ability to process STDIN for smarter cut function
+#                     no need to define input with '--f1'
+#           7.28.00 - added columnar grabbing for single files (no keying required)
+#                     like 'cut', but is column-based and can be both discontinuous and
+#                     out-of-order.
+#           9.29.99 - added file for grabbing error output
+#				    7.28.99 - added '--version' and '--nocase'
+#           7.27.99 - fixed mem leak from expanding hash table
+#           7.25.99 - added '--sync'
+use strict; # finally!
+# requires ubuntu packages "libstatistics-descriptive-perl libgetopt-mixed-perl"
+use Getopt::Long;
+# these 2 should be done in evals, so we can 'use' them only when needed.
+
+# the following stats module is only used in 1 little option.
+eval {require Statistics::Descriptive}; 
+if ($@) { # touch a junkfile so we don't keep repeating this error
+  if (! -e ".scutjunk") { 
+    my $e = `echo "this file can be deleted" > ~/.scutjunk`;
+    print STDERR "(scut): [Statistics::Descriptive] not found; continuing.\n" 
+  }
+}
+use Env qw(PATH HOME);
+
+use vars qw(
+$begin $begin_flag $c1 %C1 @c1i $c2 @c2i $csv $DATE $debug $end $end_flag
+$err $excl $f1 $f2 $fnc $help $HELPFILE $id1 $id2 $incl $k1 $k2 $labels
+@Lbls
+@L @L $lastline $LESSHELP $line_counter $L_od @Ls $mc_ba $mc_nbr $mc_OK $mc_txt
+$mod_col $Nc1i $Nc2i $newcols $nocase  $passthru $process $r $neg $pos
+$s_count $s_mn $s_sd $s_sem $s_sum $stat $stats $sync @tt $ver $VERSION $WC
+$iR $iC  $oWkS  $oWkC $xlf $oBook $od $oExcel $TMP $file $Yjoint
+$i $nbits @cbits $e $r $nn @ll $cutc1 $cutid1
+);
+$VERSION = "1.39";
+$DATE = "May 5th, 2021";
+$stats =0;
+$ver = 0;
+$excl = 0;
+$sync = 0;
+$nocase = 0;
+$err = 0; # 02-01-09 - changed default to turned off.
+$debug = 0;
+$csv = '';
+$labels = 0; # no col labels is the default
+$f1 = "STDERR";
+#$c1 = '';
+#$c2 = '';
+my $argvnmbr = $#ARGV;
+
+# hash to convert alphabetic columns to 0-based indices up to 77 cols.  You can design your own
+# algo to do this correctly if you feel offended by this cheesy hack
+
+&GetOptions("f=s"       => \$c1,   # cols to print from f1 (alias to --c1 for 'cut'-like behavior
+	    "d=s"       => \$id1,  # input delimiter for stdin or file1
+	    "f1=s"      => \$f1,      # file name 1
+            "f2=s"      => \$f2,      # file name 2
+            "k1=i"      => \$k1,      # key column 1
+            "k2=i"      => \$k2,      # key column 2
+            "c1=s"      => \$c1,      # columns to print from f1
+            "c2=s"      => \$c2,      # columns to print from f2
+            "id1=s"     => \$id1,     # input delimiter
+            "id2=s"     => \$id2,     # input delimiter
+            "od=s"      => \$od,      # output delimiter
+            "help!"     => \$help,    # dump usage, tips
+            "err!"      => \$err,     # dump lots of debugging messages
+            "version!"  => \$ver,     # just asking for version
+            "begin=s"   => \$begin,   # start at this line (if #) or that contains this regex (if regex)
+            "end=s"     => \$end,     # end at this line (if #) or that contains this regex (if regex)
+            "excl!"     => \$excl,    # if set, exclude the begin/end lines, if not set, include them
+                                      #  code is a bit odd as this was done 1st using the 'include' form which
+                                      #  is less intuitive, but since the code already worked with that flag,
+                                      #  just changed the sense of the flag.
+            "nocase!"   => \$nocase,  # no case distinction
+            "labels!"   => \$labels, # take the 1st uncommented line values as col labels
+            "mod_col=s" => \$mod_col, # modify a column by adding supplied text before or after the col value
+                                      # This allows a column value say 354.99 to be modified to GEO:GSM1099:354.99
+                                      # on the fly.  Will only work on 1 column at a time initially, but could be
+                                      # extended to mod mulitple cols at a time as well.  This is starting
+                                      # to impinge on sed territory....
+                                      # format is: --mod_col='#,b|a,"text string"'
+                                      # where: # is the 0-based column to mod, b=before, a=after,
+            "stats"     => \$stats,   #calc, print all stats
+            "passthru"  => \$passthru,  # pass thru comments
+            "sync!"     => \$sync,    # maintain sync of input and output lines
+            "debug!"    => \$debug,   # if set, triggers flood of debug statements
+            "xlf=s"     => \$xlf,     # the Excel file name to parse.
+            "csv=s"     => \$csv,     # set $id1 and $id2 to use the indicated delim and strip "s
+);
+if ($debug){$|=1;} # turn on flushing for debug...
+
+if ($ver) {
+   print "scut: Version $VERSION ($DATE) - author: Harry Mangalam (hjm\@tacgi.com)\n";
+   exit 0;
+}
+if (-t STDIN &&  $argvnmbr < 1) {
+    if ($help) {usage()}
+    else {
+        print "\n$0 acts like a super-'cut' and can do joins between 
+files using common columns.  Use '-h' for more help.\n"; 
+    }
+    exit 0;
+}
+
+#print "argv = [@ARGV]\n";
+
+# delimiters
+if ($csv ne '') {$id1 = $csv;}
+if (!defined $id1) { $id1 = '\s+';} # if it's not defined, set to whitespace
+if ($id1 =~ /TAB/i || defined $xlf) {$id1 = "\t";}
+
+if ($csv ne '') {$id2 = $csv;}
+if (!defined $id2) { $id2 = '\s+';} # if it's not defined set to whitespace
+if ($id2 =~ /TAB/i || defined $xlf) {$id2 = "\t";}
+
+if (!defined $od || $od =~ /TAB/i) { # if it's not defined in the command line,
+   $od = "\t"; # it's defined here as a tab
+   $L_od = -1;
+} else {
+	$L_od = -1 * (length $od);
+}
+
+if (defined $xlf){
+	eval 'use Spreadsheet::ParseExcel'; die "[Spreadsheet::ParseExcel] not found\n" if $@;
+	eval 'use File::Temp qw/ :POSIX /'; die "[File::Temp] not found\n" if $@;
+	$oExcel = new Spreadsheet::ParseExcel;
+	$oBook = $oExcel->Parse($xlf);
+	($TMP, $file) = tmpnam(); # get the filehandle and filename
+	# print out some pre-commented header stuff that might be useful
+	print $TMP "#FILE  :", $oBook->{File} , "\n";
+	print $TMP "#SHEETS :", $oBook->{SheetCount} , "\n";
+	print $TMP "#AUTHOR:", $oBook->{Author} , "\n" if defined $oBook->{Author};
+	for(my $iSheet=0; $iSheet < $oBook->{SheetCount} ; $iSheet++){
+		$oWkS = $oBook->{Worksheet}[$iSheet];
+		print $TMP "#--------- SHEET:", $oWkS->{Name}, "\n";
+		for(my $iR = $oWkS->{MinRow}; defined $oWkS->{MaxRow} && $iR <= $oWkS->{MaxRow}; $iR++){
+			my $line = "";
+			for(my $iC = $oWkS->{MinCol}; defined $oWkS->{MaxCol} && $iC <= $oWkS->{MaxCol}; $iC++){
+				$oWkC = $oWkS->{Cells}[$iR][$iC];
+				#print "( $iR , $iC ) =>", $oWkC->Value, "\n" if($oWkC);
+				if ($oWkC) {$line .= $oWkC->Value . $od;}
+			}
+			chomp $line; # remove last \t
+			$line .= "\n";
+			print $TMP $line;
+		}
+	}
+	close($TMP);
+	print STDERR "Converted Excel file can be retrieved at: [$file]\n";
+	#pause(__LINE__);
+	open($Yjoint, "<$file") or die "Can't open temp file [$file]\n";
+}
+
+if (!defined $k1){$k1=0;}
+
+if (!defined $begin) {
+   $begin = 1;
+   $begin_flag = "numeric";
+} elsif ($begin =~ /\D/) { $begin_flag = "regex";}
+   else { $begin_flag = "numeric"; }
+
+if (!defined $end) {
+   $end = 10000000;  # effective limit is 10,000,000 lines
+   $end_flag = "numeric";
+}elsif ($end =~ /\D/) { $end_flag = "regex";}
+else { $end_flag = "numeric"; }
+
+if ($begin_flag eq "numeric" && $end_flag eq "numeric" && ($end <= $begin)) {
+   die "The --begin value has to be less than the --end value.\n";
+}
+
+if ($excl == 0) {$incl = 1;} # inverts the --incl/exclude flag to be more intuitive..? w/o changing code
+else            {$incl = 0;}
+
+#print "c1a = [$c1]\n"; 
+if (defined $c1 &&  $c1 !~ /-/  && $c1 !~ /ALL/i && $c1 =~ /[a-zA-Z]/ ) { # this has to change
+    $c1 = alphas_to_ints($c1);
+}; # chop $c1;
+#print "c1b = [$c1]\n"; #exit 1;
+
+if (defined $c2 &&  $c2 !~ /-/  && $c2 !~ /ALL/i && $c2 =~ /[a-zA-Z]/ ) { # this has to change
+    $c2 = alphas_to_ints($c2);
+}; # chop $c2;
+
+#process the c1/c2 numbers into an array for manipulation
+if (defined $c1) {
+#	pause(__LINE__);
+    if (($c1 =~ /-/) && ($c1 !~ /ALL/i )) {$c1 = "ALL " . $c1;}
+     $Nc1i = @c1i = column_ranges($c1,$debug); # send it the string, get back an int array
+} else {$c1 = "NONE"; $Nc1i = 0; @c1i = 0;}
+
+#print "c1c = [$c1]\n"; #exit 1;
+
+# column ranges still don't work for 2nd file.\
+if (defined $c2) {
+    if (($c2 =~ /-/) && ($c2 !~ /ALL/i )) {$c2 = "ALL " . $c2;}
+    $Nc2i = @c2i = column_ranges($c2);
+} else {$c2 = "NONE"; $Nc2i = 0; @c2i = 0;};
+
+
+#if ($debug) {pause(__LINE__);}
+if (defined $mod_col) {
+	my $Nmc = my @Lmc = split /,/, $mod_col;
+	if ($Nmc != 3) {die "ERR: bad format for the --mod_col: option string should be: '#,b|a,\"text string\"'\n";}
+	$mc_nbr =  $Lmc[0];
+	$mc_ba  =  $Lmc[1];
+	$mc_txt =  $Lmc[2];
+	#print "\$Lmc[123 = [$Lmc[0]][$Lmc[1]][$Lmc[2]]\n";
+	if ($mc_ba !~ /[ba]/) {die "ERR: the [b]efore/[a]fter character in --mod_col spec wasn't 'a' or 'b'.\n";}
+	#test to see that the column to be modified is in the output col set
+	if ($c1 !~ /ALL/i){
+		my $r = 0; my $matched = 0;
+		while ($r < $Nc1i && !$matched) { if ($mc_nbr == $c1i[$r]) {$matched =1;} $r++;}
+		if ($matched == 1) {$mc_OK = 1;}
+		else {
+			die "ERR: the --mod_col column value wasn't in the --c1 output column spec.\n"
+		}
+	}
+}
+
+if (!defined $f2) { # if there's no File2, then slice the requested columns out of File1
+    # to DEBUG, uncomment the next line to open the f1 file via filehandle and change the
+    # input param to (<FILE1>) from (<>).  If you try to feed the datafile in via STDIN,
+    # it will fulfil the pause() requirements and keep going
+
+#    open(FILE1, "$f1") or die "Can't open the first file: $f1!\n"; #!! change this back to STDIN
+
+    $lastline = 0;
+    $line_counter = 1;
+    $process = 0;
+    $fnc = 0; #first non comment (1st line that will have an accurate count of the columns)
+	if (!defined $Yjoint) {$Yjoint = *STDIN;}
+    while (<$Yjoint>) { #change this back to (<>) when finished debugging.
+        if ($process == 0) {  # then we still haven't hit the start condition
+            if (($begin_flag eq "regex") && ($_ =~ /$begin/) ||
+            (($begin_flag eq "numeric") && ($line_counter == $begin))) {
+            $process++;
+            }
+        } else {  # $process > 0 we're in the midst of processing and just checking for the end condition
+            if ((($end_flag eq "regex") && ($_ =~ /$end/)) ||
+                (($end_flag eq "numeric") && ($line_counter == $end)  )) { # then we're done; exit
+                if ($incl == 1) { $lastline = 1; }
+                else {
+                    print STDERR "Total Lines Counted = $line_counter, Processed = $process\n";
+                    exit(1);
+                }
+            } # else keep on keeping on
+        }
+        if ($csv) {$_ =~ s/"//g; } # delete all double quotes
+        if ($process >= 1) {
+			if ($_ !~ /^#/ && $_ !~ /^\s+$/) { # then the line is 'of interest'
+				if ($_ !~ /$id1/){print STDERR "WARN: No delim [$id1] detected at line [$line_counter] in input [$f1]\n";}
+				chomp;
+				$newcols = ""; # zero the string
+
+				$WC = @L = split /$id1/; #  $WC = Word Count (= # columns), $id1 = input delimiter
+				# take col headers if wanted. if we want labels, we can print out them out
+				# as soon as they come in
+				if ($labels && $fnc == 1) {
+					# print the @L els
+					for (my $r=0;$r<$Nc1i; $r++) { print "$L[$c1i[$r]]$od"; }
+					print "\n";
+				}
+				$fnc++;
+				# this stanza only needs to be done once per run. key to a line counter.
+				# following only needs to be done one 1st pass if there's a (-) and no positive ranges
+				# this needs to be functionized so that it can be called if scut is called as cut or if it's called as 'join'
+				if (($fnc == 1 && $c1 =~ /-/ && $c1 !~ /\d:\d/) || ($fnc == 1 && $c1 =~ /ALL/i)) {
+					for ($i=0; $i<$WC;$i++) {$tt[$i] = $i;} # generate a linear @arr of [0 1 2 3 ..]
+					if ($c1i[0] ne 'ALL'){
+						foreach $neg (@c1i) {
+							for ($pos=0; $pos<@tt; $pos++) {
+								if ($neg < 0) {
+									if (abs($neg) == $tt[$pos]) { $tt[$pos]=-1; }
+								}
+							}
+						}
+					} # else just assign c1i to tt
+					$Nc1i = @c1i = @tt;
+				}
+				for ($r=0; $r<$Nc1i;$r++) { # do this over the number of cols we want
+					if ($c1i[$r] >= 0 && defined $L[$c1i[$r]]){
+						if ($mc_OK && $mc_nbr == $c1i[$r]) { # if the col matches, mod the column
+							if ($mc_ba eq 'b') {$L[$c1i[$r]] = "$mc_txt" . "$L[$c1i[$r]]";}
+							else {$L[$c1i[$r]] = "$L[$c1i[$r]]" . "$mc_txt";}
+						}
+					$newcols .= "$L[$c1i[$r]]$od"; # build the output line
+					}
+				}
+	#if ($debug) {pause(__LINE__);}
+				# if want to do simple stats on the cols, can do that here;
+				# prep vector from $newcols, feed to stats() and put output in following columns.
+				if ($stats == 1 && $newcols =~ /[a-df-zA-DF-Z]+/){
+					$newcols .= "count$od" . "mean$od" . "std_dev$od" .  "sem$od" . "sum$od";
+				}
+				#print "newcols = [$newcols]\n";
+				if ($stats == 1 && $newcols !~ /[a-df-zA-DF-Z]/){
+					eval 'use Statistics::Descriptive'; die "[Statistics::Descriptive] not found\n" if $@;
+					# split $newcols
+					@Ls = split /$od/, $newcols;
+					$stat = Statistics::Descriptive::Full->new();
+					$stat->add_data(@Ls);
+					#$newcols .= "$L[$k1]$od";
+					$s_count = $stat->count(); $newcols .= "$s_count$od";
+					if ($s_count > 1) {
+						$s_mn = $stat->mean(); $newcols .= sprintf "%.3e%s", $s_mn, $od;
+						$s_sd = $stat->standard_deviation();
+						$newcols .= sprintf "%.3e%s", $s_sd, $od;
+						$s_sem = $s_sd / sqrt($s_count); $newcols .= sprintf "%.3e%s", $s_sem, $od;
+						$s_sum = $stat->sum(); $newcols .= sprintf "%.3e%s", $s_sum, $od;
+					}
+				}   # dont forget to add the headers above...
+				$newcols = substr($newcols, 0, $L_od);
+				# print conditions
+				# print "incl=$incl process=$process lastline=$lastline\n";
+				if (($incl == 1) || ($process >= 1) || ($lastline == 1 && $incl == 1)) {
+				print "$newcols\n";
+				}
+			} elsif ($passthru || $debug) { print  STDERR "$_\n";  }
+			$process++;
+		}
+		$line_counter++;
+		if ($lastline == 1) {
+			print STDERR "Total Lines Counted = $line_counter, Processed = $process\n";
+			exit(1);
+		}
+	}
+
+} else {
+	open(FILE1, "$f1") or die "Can't open the first file: $f1 or STDIN!\n";
+
+   my $TotLineCnt = 0; my $UnCommented = 0;
+   my $UniqIndexCnt = 0;
+   if ($debug) {pause(__LINE__);}
+
+   my $lastline_1 = 0;
+   my $line_counter_1 = 1;
+   my $process_1 = 0;
+#   my $fnc_1 = 0; #first non comment (1st line that will have an accurate count of the columns)
+   if (!defined $k1){die "Ooops! No key column (--k1='integer') defined for 1st file.\n";}
+   while (<FILE1>) {
+      chomp;
+      $TotLineCnt++;
+
+    if ($_ !~ /^#/ && $_ !~ /^\s+$/) {
+        $UnCommented++;
+        $fnc++;
+        my $WC;
+        my @L;
+        if ($_ !~ /$id1/){
+            $WC =1; $L[0] = $_; # if no defined delimiter found
+        } else {
+            $WC = @L = split /$id1/; #  $WC = Word Count, $id1 = input delimiter
+        }
+        #print col headers as in 1st stanza
+		if ($labels && $fnc == 1) {
+			for (my $r=0;$r<$Nc1i; $r++) { print "$L[$c1i[$r]]$od"; }
+		}
+
+        # need to add checking for redundant indices, other error checking
+        # if this is supposed to be Case-INSENSITIVE
+
+        # what if there is only 1 field (w/ no delimiters?) in the needle file?
+
+        # following only needs to be done one 1st pass if there's a (-) and no positive ranges
+        # this needs to be functionized so that it can be called if scut is called as 'cut
+        # or if it's called as 'join'
+        if (($fnc == 1 && $c1 =~ /-/ && $c1 !~ /\d:\d/) || ($fnc == 1 && $c1 =~ /ALL/i)) {
+            for ($i=0; $i<$WC; $i++) {$tt[$i] = $i;} # generate a linear @arr of [0 1 2 3 ..]
+            if ($c1i[0] ne 'ALL'){
+                foreach $neg (@c1i) {
+                    for ($pos=0; $pos<@tt; $pos++) {
+                        if ($neg < 0) {
+                            if (abs($neg) == $tt[$pos]) { $tt[$pos]=-1; }
+                        }
+                    }
+                }
+            } # else just assign c1i to tt
+            $Nc1i = @c1i = @tt;
+        }
+
+
+
+         if ($nocase == 1) {
+            $L[$k1] = uc($L[$k1]); # change everything to UPPER case
+         }
+         if (defined $C1{$L[$k1]}[0] && $err) { # if we've already set it (already hit the same index word
+            print STDERR "\nERR: Keyword \"$L[$k1]\", line ", $TotLineCnt," already seen: ", $_, "\n";
+         } else {
+            $UniqIndexCnt++;
+            # $C1 is the BIG array for keeping all the info we want saved from file 1
+            # $C1 uses a hash index to keep track of the bits - will it work with purely integers as well?
+            $C1{$L[$k1]}[0] = 1; # set the [0] so that we know it's been hit.
+            $C1{$L[$k1]}[1] = $L[$k1]; # and put the key itself into the [1]
+            # now save all the info we want saved in $C1
+            #print "D:Nc1i = $Nc1i \n";
+            for ($r=2; $r<$Nc1i+2; $r++) { # for every col that we want to output eventually
+               $C1{$L[$k1]}[$r] = $L[$c1i[$r-2]];
+            }
+         }
+      }
+   }
+   print STDERR "\nINFO FILE 1:Total Lines: ", $TotLineCnt, "  Uncommented Lines: ", $UnCommented, "  Lines with Unique Keys: ", $UniqIndexCnt, "\n\n";
+
+   #open the 2nd file
+   open(F2, "$f2") or die "Can't open the second file: $f2!\n";
+   $TotLineCnt = 0;
+   $UnCommented = 0;
+   $UniqIndexCnt = 0;
+   $fnc = 0;
+if ($debug) {pause(__LINE__);}
+	while (<F2>) {
+        if (!defined $k2){die "Ooops! No key column (--k2='integer') defined for 2nd file.\n";}
+		chomp;
+        $TotLineCnt++;
+        if ($_ !~ /^#/ && $_ !~ /^\s+$/) {
+			$UnCommented++;
+			$fnc++;
+            $WC = @L = split /$id2/; #      $WC = Word Count
+			if (!defined $c2 || $c2 =~ /ALL/i) {# we want all cols,
+				$Nc2i = $WC;
+				for ($r=0; $r<$WC;$r++) {$c2i[$r] = $r;  }
+			}
+			#print "printing labels now";
+			if ($labels && $fnc == 1) {
+				for (my $r=0;$r<$Nc2i; $r++) { print "$L[$c2i[$r]]$od"; }
+				print "\n";
+			}
+
+         # if this is supposed to be Case-INSENSITIVE
+         if ($nocase == 1) {
+            $L[$k2] = uc($L[$k2]); # change everything to UPPER case
+         }
+
+         if (!defined $C1{$L[$k2]}[0]) { # if it hasn't been set, then it's not a match, so print it to stderr
+            delete $C1{$L[$k2]};
+            if ($err) {
+               print STDERR "ERR:Keyword \"$L[$k2]\", line ", $TotLineCnt, " not a match: ", $_, "\n";
+            }
+            if ($sync == 1) { # if we want the output to sync (maintain line numbers),
+               print "\n"; # add a newline
+            }
+         } else { # it IS a match and we want all the juicy bits printed out in a particular format
+            $UniqIndexCnt++;
+            # 1st print out the stuff from file 1 in order of storage, then the stuff from file 2 as requested
+            #       1
+            for ($r=2; $r<$Nc1i+2; $r++) { # for the 1st file
+                #print "[f1 $r] $C1{$L[$k2]}[$r]$od";
+                if (defined $C1{$L[$k2]}[$r]){ print "$C1{$L[$k2]}[$r]$od";}
+                else {print "NA$od";}
+            }
+            for ($r=0; $r<$Nc2i; $r++) { # for the second file
+               #if (defined $L[$c2i[$r]]) {print "[f2 $r] $L[$c2i[$r]]$od";}
+#               print "el $r undefined? [$c2i[$r]], [$L[$c2i[$r]]]\n";
+               if (defined $L[$c2i[$r]]) {print "$L[$c2i[$r]]$od";}
+               else {print "NA$od";}
+            }
+			#print "L_od = $L_od\n";
+        	#$newcols = substr($newcols, 0, $L_od);
+            print "\n";
+         }
+      } elsif ($sync == 1) {
+        print "\n";
+      } else { if ($passthru) {print "$_\n";} }
+   }
+}
+
+# --------------------------- SUBROUTINES -------------------------------- #
+
+sub alphas_to_ints ($) {
+    # changes an input string of "a l p h aB e t i c c h A R S" to ints, according to the hash
+    # going to continue to use 'c1' and derivative since that's what it started out as
+    my $c1 = shift;
+    my %excel_ids = ('A' => 0,
+    'B' =>   1,'C'  =>  2,'D'  =>  3,'E'  =>  4,'F'  =>  5,'G'  =>  6,'H'  =>  7,'I'  =>  8,'J'  =>  9,'K'  => 10,
+    'L' =>  11,'M'  => 12,'N'  => 13,'O'  => 14,'P'  => 15,'Q'  => 16,'R'  => 17,'S'  => 18,'T'  => 19,'U'  => 20,
+    'V' =>  21,'W'  => 22,'X'  => 23,'Y'  => 24,'Z'  => 25,'AA' => 26,'AB' => 27,'AC' => 28,'AD' => 29,'AE' => 30,
+    'AF' => 31,'AG' => 32,'AH' => 33,'AI' => 34,'AJ' => 35,'AK' => 36,'AL' => 37,'AM' => 38,'AN' => 39,'AO' => 40,
+    'AP' => 41,'AQ' => 42,'AR' => 43,'AS' => 44,'AT' => 45,'AU' => 46,'AV' => 47,'AW' => 48,'AX' => 49,'AY' => 50,
+    'AZ' => 51,'BA' => 52,'BB' => 53,'BC' => 54,'BD' => 55,'BE' => 56,'BF' => 57,'BG' => 58,'BH' => 59,'BI' => 60,
+    'BJ' => 61,'BK' => 62,'BL' => 63,'BM' => 64,'BN' => 65,'BO' => 66,'BP' => 67,'BQ' => 68,'BR' => 69,'BS' => 70,
+    'BT' => 71,'BU' => 72,'BV' => 73,'BW' => 74,'BX' => 75,'BY' => 76,'BZ' => 77);
+    $c1 =~ tr/a-z/A-Z/;
+    my $Nc1a = my @Ac1a = split(/\s+/, $c1);
+    $c1 = "";  # reset c1
+	for (my $i=0; $i<$Nc1a; $i++) {
+		if ($Ac1a[$i] =~ /\D/ ) { # matches a non-digit, convert to a digit
+            #print " [ $Ac1a[$i] ]\n";
+			if (length($Ac1a[$i]) > 2) { # something's wrong - hash doesn't support keys > 2
+				die "the column specifier in --c1 ($c1i[$i]) is too long\n";
+			} else {
+				$c1i[$i] = $excel_ids{$Ac1a[$i]}; # replace inline
+				#print " [ $c1i[$i] ]\n";
+				$c1 .= $c1i[$i] . " "; 
+			}
+		}
+	}
+	return $c1; # now converted to ints
+ }   
+
+sub trim($) {
+    my $string = shift;
+    $string =~ s/^\s+//;
+    $string =~ s/\s+$//;
+    return $string;
+}
+
+sub column_ranges {
+    # this sub takes in a column specifier string of the format:
+    # '13 2 6 4 8 8 3' (all +#s -> print these cols in this order (duplicates allowed)
+    # '3:7 9 11:19 -14:-17 22:23' mixed +, - ranges.  generates an output of:
+    # [3 4 5 6 7 9 11 12 13 18 19 22 23] (the - ranges negate the +ranges specified)
+    # 'ALL -3 -7:-13' prints all columns in order EXCEPT 3 7 8 9 10 11 12 13
+    # note that this routine handles col indices in L->R order and mantains that order.
+    # sub column_ranges(@col_str) { ... return @order } # @order is int array that contains order of rationalized cols
+    # this sub should be callable to mask the @pos with the @neg and return the result (result could be placed
+    # in the @pos to be returned.. This should be callable for any set of inputs.
+    # so optimally, the original column selection string is sent in and the equalized string is emitted (or an array of ints
+    # that has all the columns in the proper order.
+
+    # $Nc1i = @c1i = column_ranges($ics); #example of call - string goes in, array comes out.
+
+    my $ics = shift;
+    $debug = shift;
+    my @cols_neg; my @cols_pos; my $cn= 0; my $cp= 0;
+    my @final;
+#    my $debug = 0;
+
+    if (($ics=~ /-/) && ($ics !~ /\d:\d/) && ($ics !~ /ALL/i ) && ($ics !~ / \d/)) {
+        # then it's negatives only in ranges or singles, so ADD the implied ALL
+        $ics = "ALL " . $ics;
+        if ($debug) {print  STDERR "added ALL to all-negative run\n"; }
+    }
+    if (($ics =~ /:/ || $ics =~ /-/) && ($ics !~ /ALL/i )) { # make sure that if the var = 'ALL' it stays 'ALL'
+
+        if ($debug) {print STDERR  "\$ics: range or negative, but NO ALL\n"; }
+        # so it could be -c1='-3:-40'
+        $ics = trim($ics); # trim both ends of whitespace
+        # break it into bits on spaces
+        my $nbits = my @cbits = split(/\s+/,$ics);
+        for (my $e=0; $e<$nbits; $e++) {
+            #print "cbits[$e] = $cbits[$e]\n";
+            if ($cbits[$e] =~ /\d:[-\d]/) {  # 23:45 or -34:-23  but not '12:' or ':67'
+                my $nn = my @ll = split(/:/,$cbits[$e]); # splits b:e to [b] [e]
+                if ($ll[0]<0 && $ll[1]>0 ||$ll[0]>0 && $ll[1]<0 ) {die "A column range crosses 0: [$ll[0] to $ll[1] - This is nonsense!  Try again\n";}
+                if ($ll[0] > $ll[1]) {
+                    for (my $i=$ll[0]; $i>=$ll[1]; $i--) { # note $i decrements
+                        if ($i>=0) {$cols_pos[$cp++] = $i;} #print "+"; # put positive #s in pos array
+                        else {$cols_neg[$cn++] = $i; } #print "-";      # and negative #s in neg array
+                    }
+                } else { # b < e (usual case)
+                    for ($i=$ll[0]; $i<=$ll[1]; $i++) { # note $i increments
+                        if ($i>=0) {$cols_pos[$cp++] = $i;} #"print+"; # put positive #s in pos array
+                        else {$cols_neg[$cn++] = $i;} #print "-";      # and negative #s in neg array
+                    }
+                }
+            } else { # it will be a single number like 2 or 45 or -45
+                if ($cbits[$e]>=0) {$cols_pos[$cp++] = $cbits[$e];} # put positive #s in pos array
+                else {$cols_neg[$cn++] = $cbits[$e];}              # and negative #s in neg array
+            }
+        }
+        # now all components are in the @cols_etc array, so now need to delete
+        # those that have negative  references ie can have a range of
+        #   --c1='11:19 -14 -25 24:26  46'
+        # and the '-14 would negate the '14' implied by '11:22'.
+        # so in above case the pos array would be:
+        # [11 12 13 14 15 16 17 18 19 24 25 26 46]
+        # and the neg array would be
+        # [-14 -25]
+        # and the negs should erase the pos's so the ending array in the pos array would be:
+        # [11 12 13 -1  15 16 17 18 19 24  -1  26 46] (use  -1 in the cols_pos to indicate a skip
+        # if $cols_pos[] < 0, don't print it. if it's +, print it in that order.
+#         $sz = scalar @cols_neg;
+#         print STDERR "Array cols_neg = @cols_neg, sz = $sz\n";
+#         if ($debug) {pause(__LINE__);}
+
+        foreach my $neg (@cols_neg) {
+            for (my $pos=0; $pos<@cols_pos; $pos++) {
+                #print "neg = $neg, pos = $pos, cols_pos[$pos] = $cols_pos[$pos]\n";
+                #if ($neg == abs($cols_pos[$pos]) {$cols_pos[$pos] = -1;}
+                if (abs($neg) == $cols_pos[$pos]) { $cols_pos[$pos] = -1; } #print "match!\n";
+            }
+        }
+#        if ($debug) {pause(__LINE__);}
+#         my $fc = 0;
+#         for (my $pos=0; $pos<=@cols_pos; $pos++) {
+#             if ($cols_pos[$pos] =! -1) {$final[$fc++] = $cols_pos[$pos]} # skips the -1's
+#         }
+        # @ loop end, just return @cols_pos; thecode has to be modified to handle -1a
+        return @cols_pos;
+
+    } elsif ($ics =~ /ALL/i) { # ALL makes sense only if you ask for ALL alone or with a
+        # set of (-)s (so warn if detect a positive in there as well
+        # so break it into bits and extract the (-)s. this will result in an array of negatives
+        # that will have to be checked as we print out the cols.
+        # means that we'll have to have 2 modes:
+        #   print_pos (print ONLY the columns noted) if (defined $col[$i]) {print col_pos[$i
+        #   print_neg (print ALL the columns EXCEPT the columns noted)
+        #   and then 'ALL' alone signifies to print all columns.
+        $ics = trim($ics);
+        if ($ics eq "ALL" || $ics eq "all"){ # should test before entry also
+#            $final[0] = "ALL"; $final[1] = "STOP";
+            $final[0] = "ALL";
+            return @final;
+        }
+        $nbits = @cbits = split(/\s+/,$ics);
+        for ($e=0; $e<$nbits; $e++) {
+            # one of the bits is ALL cuz that's how we got here. we want to fill in the rest of the (-)s
+            if ($debug) {print  STDERR "CBITS = $cbits[$e] \n";}
+            #$ert = int($cbits[$e]) + 23;
+            #print "ert = $ert\n";
+            if ($debug) {pause(__LINE__);} # $cbits[$e]
+            if ( $cbits[$e] =~ /-\d/) { # look for a -#
+                if ($cbits[$e] =~ /:/){ # a range
+                    $nn = @ll = split(/:/,$cbits[$e]);
+                    if ($ll[0]>0 || $ll[1]>0) {
+                        die "One of the ranges has a +# in it which doesn't make sense if you specify 'ALL' as well\n";
+                    }
+                    if ($ll[0] > $ll[1]) {my $tmp = $ll[0]; $ll[0]= $ll[1]; $ll[1]=$tmp;}  # b > e  -4:-6; flip em
+                    for ($i=$ll[0]; $i<=$ll[1]; $i++) { # note $i decrements
+                        if ($i>0) {die "Don't want a (+) number with ALL; only (-)s\n";} # emit error
+                        else {$cols_neg[$cn++] = $i;}      # put negative #s in neg array
+                    }
+                } else { $cols_neg[$cn++] = $cbits[$e];}  # it's a single so just paste the # in as a neg
+            } elsif ($cbits[$e] !~ /ALL/i && int($cbits[$e]) > -1) {
+                die "One of #s you specified [$cbits[$e]] is + which doesn't make sense if you specify 'ALL' as well\n";
+            }
+        }
+        # return @cols_neg (all (-)s) and when test for 'ALL' when printing, also test for (-)s in the @arr.
+        if ($debug) {print  STDERR "about to return \@col_neg\n"; pause(__LINE__);}
+        return @cols_neg;
+    } elsif ($ics =~ /\d/ && $ics !~ /-/) {
+		@final = split(/\s+/, $ics);return @final;} #  should be only #s like '2 5 3 7 6'
+    else {exit 1;}; # die "There's something wrong with the column specification [$ics]\n";}
+}
+
+sub pause {
+    my $line = shift;
+    print STDERR "Paused at line $line. <ENTER> to continue.\n";
+    my $tmp = <STDIN>;
+}
+
+sub usage {
+	$LESSHELP = <<HELP;
+
+scut version: $VERSION, last mod: $DATE
+
+  by Harry Mangalam; <hjm\@tacgi.com> || <harry.mangalam\@uci.edu>
+  scut v1.30 and above is released under the GNU General Public License v 3.0.
+  That license can be found at: <http://www.gnu.org/licenses/gpl.html>
+  I'd appreciate a note if you find it useful or find/fix a bug, or can
+  offer a suggestion.
+
+scut has 2 purposes:
+ 1) printing fields from lines that have one field that matches a field from
+    another file in much the same way as the 'join' utility (explained below).
+
+ 2) slicing out columns out of a file and (optionally) re-ordering them
+    If you had a file, a line of which was:
+     0   1  2   3    4   5   6       7      8  9      10 11  12     13 14
+    "now is the time for all twisted wackos to wheeze on the snoots of coots"
+    and you only wanted fields 3 5 7 and 8, but you wanted them in the order:
+    5 8 7 3, you could specify this by --c1='5 8 7 3', and that line would be
+    output as:
+    "all to wackos time"
+
+    This function is essentially a smarter 'cut', and only REQUIRES the input
+    (as STDIN, not a file name) and the columns to print (--c1='# # # #').
+    If you want it to break on something other than whitespace, you have to
+    specify that as well.
+
+Usage: scut [options, below] > output_file
+  -f='# # ..'     - synonym for '--c1' below to allow better compatibility
+                     with 'cut'
+  -d="..."        - synonym for '--id1' below, the delimiter string for STDIN
+                     or file1 to allow better compatibility with 'cut'
+  --f1=[file1]    - the shorter or 'needle' file.  If using as a smarter cut,
+                     use STDIN.
+  --f2=[file2]    - the longer or 'haystack' file
+  --xlf=[Excelfile] - can read and parse native binary Excel files with
+                     Spreadsheet::Excel with the same options as used with
+                     STDIN.  If there are multiple worksheets, all will be
+                     processed.
+
+  --k1=col#       - the key column from file1 (numbered from ZERO, not 1)
+                     i.e the number of the column (starting from 0) that
+                     has the key column name for file1 (see example below)
+                     Use this to specify an ID column if you need one for
+                     the --stats flag (see below). Default = 0;
+
+  --k2=col#       - the key column from file2 (ditto)
+
+  --c1='# # ..'   - the numbers of the columns from file1 that you want
+                     printed out in the order in which you want them.  If
+                     you DON'T want any columns from the file, just
+                     omit the --c1 option completely.
+                     If you want the whole line, type --c1='ALL'.
+                     Can also use the '-f' synonym at top.
+
+                     You can also use discontinous ranges like '2:4 8:10'
+                     to print [2 3 4 8 9 10] and decreasing ranges like
+                     '8:4' to print cols [8 7 6 5 4].  You can also negate
+                     columns to remove them from a larger range '9:12' -11'
+                     to print [9 10 12] or 12:1 -7:-4 to print
+                     [12 11 10 9 8 3]. You can also use the 'ALL' keyword
+                     to print all cols and negate the ones you don't
+                     want with negative ranges - 'ALL -8:-14' to print all
+                     columns EXCEPT 8-14.
+
+                     Notes:
+                     1) #s are split on whitespace, not commas.
+                     2) scut also supports Excel-style column specifiers such as:
+     or
+  --c1='A C F ..'    (A B F AD BG etc) for up to 78 columns (->BZ)  If you want
+                     more, add them to the \%excel_ids hash in the code or create an
+                     algorithm that does it right.
+
+  --c2='# # ..'   - ditto for file2
+     or
+  --c2='A C F ..'
+
+  --id1='...'     - the delimiter string for file1; defaults to whitespace
+                    (specify TAB ('\\t') by specifying either '\\t' or much
+                    more simply 'TAB' [ --id='TAB' (case insensitive)]
+                    (friggin shell escapes will bugger you every time)
+                    It can be a multicharacter string as well such as '_|_'
+
+  --id2='...'     - ditto for file2
+
+  --csv='delim'   - sets the format for both file1 and file2 to process Excel-
+                    formatted CSV files (argument=delim char, with text
+                    enclosed with double quotes). ie:
+                    7,"this is data 1","yadda badda",14.8,"my name isn't BOO"
+                    for the above, use --csv=','
+                    Can use 'TAB' to indicate a tab delim, as with '--id1'
+
+  --od='...'      - the delimiter string for the output (defaults to TAB)
+
+  --err           - generates lots of messages on stderr for debugging
+                    (for large files, most of the CPU is dedicated to
+                    processing the STDERR text stream (thanks for stressing
+                    it, Peter), but if you need this output, you'll just
+                    have to deal with it.
+
+  --labels        - prints the column labels (assumed to be on the 1st Non-Commented
+                    line.  Works with both 1-file and 2-file versions.
+
+NB: the following 4 options: --begin, --end, --excl --mod_col, --passthru currently only
+  work with the single file version (as a smarter cut, not the merging functions).
+
+  --begin=[#|regex] - specifies the line to START processing data at (for
+                      example, if the file has 2 format sections and you only
+                      want to process one of them).  The option can be either
+                      an integer value to specify the line number, or a non-
+                      repeating regular expression that unambiguously identifies
+                      the line.
+
+  --end=[#|regex] - as above, but specifies the line to STOP processing data at.
+
+  --excl          - if added to the arguments, excludes the lines specified by
+                      --begin and --end (in case you need to exclude the
+                      defining header lines).
+
+ --mod_col='#,[ab],text string'
+                  - allows you to modify the specified column # by adding the
+                    specified text string before or after the value.
+                    --mod_col='3,a,tail end' appends the string 'tail end' to
+                    the value in column 3 (remember: 0-based counts)
+
+  --passthru      - if used, passes comments thru to the output unchanged
+
+
+
+  --stats         - requests (per-row) descriptive stats of the output columns
+                    to be appended to each line.  Includes mean, std_dev,
+                    sem, counts and sum. Use the --k1 flag to define an ID
+                    col; defaults to 0. For per-column stats, pipe each column into
+                    'stats': <input> |scut --ic1='4' |stats
+                    (stats is at:<http://goo.gl/uGsS>)
+
+  --version       - gives the version of the software and dies.
+
+  --nocase        - makes the merging key case INSENSITIVE.
+
+  --sync          - whether you want the output sync'ed on file2.  The sync
+                    will insert blank lines where there are comments as well.
+  --help          - sends these lines to 'less' and dies on exit.
+  --debug         - generates  lots of debugging info and expects file input
+                    via --f1 (not STDIN) to allow pausing.
+
+ Notes:
+
+ = there have to be the same number of columns in each line or it will get
+ confused.  The matches are case-sensitive, unless you use the '--nocase'
+ option to turn it off.
+
+ = scut sends its output to stdout, so if you want to catch the output in a
+ file, use redirection '>' (see below) and if you want to catch the stderr
+ you'll have to catch that as well ( >& out ).
+
+ = scut ignores any line that starts with a '#', so you can document what
+ the columns mean, add column numbering, etc, as long as those lines start
+ with a '#'
+ 
+ = if you need to keep the ordering intact for either of the files, run 
+ them thru 'cat -n' to number the lines so they can be re-sorted after 
+ processing (Tx, Theo).
+ 
+ = scut processes both files in-memory and expands to about 10x the size of 
+ both files in-mem.  So, good for data up to the 10s of GB on servers
+ but probably not more.
+ 
+ = under Win/DOS execution, you will probably need to run it with the perl
+   prefix i.e. perl scut [options] and will also have to enclose the option
+   strings with DOUBLE QUOTES (\"opts\") instead of single quotes('opts').
+   
+
+HELP
+$HELPFILE = "$HOME/.scuthelpfile" . $$;
+open(HF, ">$HELPFILE") or die "Can't open helpfile [$HELPFILE] at __LINE__ \n";
+print HF $LESSHELP;
+close HF;
+system("less $HELPFILE");
+unlink $HELPFILE; # and get rid of it asap
+exit(0);
+}

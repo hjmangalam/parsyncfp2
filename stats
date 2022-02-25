@@ -1,0 +1,785 @@
+#!/usr/bin/env perl
+# by Harry Mangalam, hjmangalam@gmail.com.com.
+
+# after significant changes, update the tarballs that need it and cp to moo for distribution; update the scut github
+# export filename="/home/hjm/bin/stats"; scp ${filename} moo:~/public_html; scp ${filename} moo:~/bin;  scp ${filename} bridgit:~/bin; ssh bridgit 'scp ~/bin/stats hmangala@hpc12:~/bin'
+
+# cd ~/gits/scut; cp ~/bin/stats .; git add stats; git commit -m 'commit message'; git push
+# TODO add QQ plot to test for normality?
+use strict;
+use Getopt::Long;
+
+use vars qw( $wide $dist $Xsize $Ysize $ln $N $sum $Min $Max $XYDist @Data $pager
+    $XRange $XBinSize $XMul @SData $NWH $Median $even $Mean $SumDiffs2 $SumDiffs3 
+    $SumDiffs4 $ValCnt $Val $MaxSoFarValCnt $ModeInd @Dist $jmin $jmax $J $YMax 
+    $YBinSize $YMul @XYDist $ModeNum $Mode $S2 $S $Kurtosis $SEM $Skew $StdSkew 
+    $gfmt $VERSION $DATE $HELPFILE $HELP $ConfIntLow $ConfIntHi $QUIET $stdout 
+    %xfhash $xf $id $od $raw $QUANTILE $cutindex $cutvalue @QUANT $QUANTSTR
+    $ONLY $pSUM $pNUM $pMEAN $pMEDIAN $pMODE $pNMODES $pMIN $pMAX $pRANGE $pVAR
+    $pSD $pSEM $p95C $pSKEW $pSTDSKEW $pKURTOSIS $pQUANTILE $pQindex $PopKurtosis
+    $pPopKURTOSIS @pr %OUT $MINLIMIT $MAXLIMIT $CAPTURE %ConfMult $pCONF $CONFINT 
+    $pConfindex
+);
+    
+$VERSION = "2.1.2 Waiting for NoSco";
+$DATE = "June 2, 2021";
+$ONLY = 0;
+if (!defined $ENV{'PAGER'}) {$pager = "less";};
+$gfmt = 1;
+$NWH = 0;
+$stdout = 0;
+$pQUANTILE = 0; 
+$pQindex = 100000; # outside possible range.
+$MINLIMIT = -1e32;
+$MAXLIMIT = 1e32;
+$CAPTURE = 0;
+$dist=0; # no plot is default
+
+%xfhash = (
+  'log10'  => 1,  'ln'     => 1,  'sqrt'   => 1,  'x^2'    => 1,  'x^3'    => 1,
+  '1/x'    => 1,  'sin'    => 1,  'cos'    => 1,  'tan'    => 1,  'asin'   => 1,
+  'acos'   => 1,  'atan'   => 1,  'round'  => 1,  'trunc'  => 1,  'frac'   => 1,
+  'abs'    => 1,  'exp'    => 1,  'pass'   => 1,  ''       => 1
+  );  
+%ConfMult = ( # see: https://www.mathsisfun.com/data/confidence-interval.html
+  '80' => 1.282,  '85' => 1.440,  '90' => 1.645,  '95' => 1.960,  '99' => 2.576,
+  '99.5' => 2.807,  '99.9' => 3.291 
+);
+
+&GetOptions(
+   "wide!"   => \$wide,  # no args - just set to 1
+   "dist=i"  => \$dist,  # 1 for 1-liner, 2 for xy plot with the following vars, 3 for both
+   "x=i"     => \$Xsize, # the # of characters in the X axis
+   "y=i"     => \$Ysize, # the # of lines in the Y axis
+   "help!"   => \$HELP,  # ask for help
+   "h!"      => \$HELP,
+   "quiet!"  => \$QUIET, # shhhhh!
+   "nwh!"    => \$NWH,   # No Wide Headers (if repeating wide mode, don't want headers)
+   "stdout!" => \$stdout,   # just print, don't do stats on the numbers
+   "xf=s"    => \$xf,    # do a transform of the #s before doing anything.
+   "gfmt!"   => \$gfmt,  # set to Perl's 'general' numeric notation; leave alone so interface doesn't change
+   "raw!"    => \$raw,   # set to see raw Perl notation (not gfmt, now the default)
+   "id=s"    => \$id,    # input delimiter
+   "od=s"    => \$od,    # output delimiter
+   "minlimit=i" => \$MINLIMIT, # filter values < this
+   "maxlimit=i" => \$MAXLIMIT, # filter values > this
+   "quantile=i" => \$QUANTILE, # number of quantiles to calculate
+   "conf=s"   => \$CONFINT, # confidence interval 
+   "capture!" => \$CAPTURE, # capture filtered values in './stats.capture', overwritten each time
+   "sum!"     => \$pSUM,    # for printSUM, etc 
+   "num!"     => \$pNUM,    #
+   "mean!"    => \$pMEAN,    #
+   "median!"  => \$pMEDIAN,    #
+   "mode!"    => \$pMODE,    #
+   "nmodes!"  => \$pNMODES,    #
+   "min!"     => \$pMIN,    #
+   "max!"     => \$pMAX,    #
+   "range!"   => \$pRANGE,    #
+   "var!"     => \$pVAR,    #
+   "sd!"      => \$pSD,    #
+   "sem!"     => \$pSEM,    #
+#   "conf!"    => \$pCONF,    #
+   "skew!"    => \$pSKEW,    #
+   "stdskew!" => \$pSTDSKEW,    #
+   "kurt!"    => \$pKURTOSIS,    # https://brownmath.com/stat/shape.htm#KurtosisCompute
+   "popkurt"  => \$pPopKURTOSIS, #
+   "qq!"      => \$pQUANTILE,   # quantile
+   );
+
+if (defined $CONFINT) {
+    $CONFINT = trim($CONFINT); $CONFINT =~ tr/%//d;
+    $pCONF = 1; # if define it, want to print it.
+    if (!defined $ConfMult{$CONFINT}){
+        die("The Confidence Interval you specified [$CONFINT] isn't supported.
+        Supported values are 80, 85, 90, 95, 99, 99.5, 99.9");
+    }
+} else { $CONFINT = "95";}
+
+if (defined $QUANTILE) {$pQUANTILE = 1;} # if define, want to print it.
+# then run thru the array els and incr $ONLY for each key.
+if ($pSUM){$pr[$ONLY++] = "Sum";}
+if ($pNUM){$pr[$ONLY++] = "Number";}
+if ($pMEAN){$pr[$ONLY++] = "Mean";}
+if ($pMEDIAN){$pr[$ONLY++] = "Median";} 
+if ($pMODE){$pr[$ONLY++] = "Mode";} 
+if ($pNMODES){$pr[$ONLY++] = "NModes";} 
+if ($pMIN){$pr[$ONLY++] = "Min";} 
+if ($pMAX){$pr[$ONLY++] = "Max";} 
+if ($pRANGE){$pr[$ONLY++] = "Range";} 
+if ($pVAR){$pr[$ONLY++] = "Variance";}    
+if ($pSD){$pr[$ONLY++] = "Std_Dev";} 
+if ($pSEM){$pr[$ONLY++] = "SEM";} 
+if ($pCONF){$pConfindex = $ONLY; $pr[$ONLY++] = "Conf_Int";} 
+if ($pSKEW){$pr[$ONLY++] = "Skew";} 
+if ($pSTDSKEW){$pr[$ONLY++] = "Std_Skew";} 
+if ($pKURTOSIS){$pr[$ONLY++] = "Kurtosis";}
+if ($pPopKURTOSIS){$pr[$ONLY++] = "PopKurt";}
+if ($pQUANTILE){$pQindex = $ONLY; $pr[$ONLY++] = "Quantiles";}
+# $ONLY is now pointing past the end of the array
+if ($CAPTURE) {open (CAP, "> ./stats.exceptions") or die "Can't open filter file [./stats.filtered]"; }
+
+# print indiv results by using $pr[x] as header and $OUTPUT{"$pr[x]"} as the value.
+if ($raw) {$gfmt = 0;} # set to perl native format
+
+#  perltidy cmd to format uniformly: perltidy -ce -i=2 -l=100 stats 
+
+# 06.02.2021 fixed bug that disabled correct (single) outputs if all input numbers were the same 
+# 11.16.2020 added variable quantiles, variable confidence intervals.
+# 10.26.2020 added quantiles, variable printing.
+# 11.28.2017 added xf=pass for simple text/data filtering.
+# 11.10.2017 added transforms (--xf) & --stdout so stats can be used as an inline transform
+# 06.15.2017  added 95% confidence intervals
+# 03.12.2014 added '--quiet' to silence non-fatal warnings.
+# 01.11.12 added 'general numeric format, replacing strict sci notation
+# 05.01.08 added comma removal after embarrassing conversation with credit card company
+#  7.14.06 add --sci to format for scientific notation output. ie:
+#  --sci
+#  2.05.01 addded Distribution calc/graph
+#  2.01.01 format change to ease integration (Mode, NMode# split onto separate lines)
+#         Made Labels single words and unambiguous for easier grepping
+
+# 11.10.00 added wide printing (--wide)
+#  9.27.00 adding check for included non-numbers
+#  4.21.00 adding check for FLAT mode, modecount =1
+# 11.24.99 adding Mode, Mode count, Median to output.
+$N = 0;
+$sum = 0;
+$Min = $Max = 0;
+
+# handle input and offer help if none.
+if (-t STDIN) {
+    if ($HELP) {usage()}
+    else {
+        print "\n[$0] will emit descriptive statistics based on 
+all number-like input fed it on STDIN.  Use '-h' for more help.\n"; 
+    }
+    exit 0;
+}
+
+# define undefined vars
+if (!$xfhash{$xf}){die "ERROR: I don't support that transform; try again or see the help (-h)\n"; }
+if (!defined $Xsize) { $Xsize = 60; }
+if (!defined $Ysize) { $Ysize = 25; }
+if (!defined $id) {$id = "\\s+";}
+if (!defined $od) {$od = "\t";}
+if (!defined $QUANTILE) {$QUANTILE=5;} 
+#Zero the DIST array
+for (my $x=0; $x<$Xsize; $x++) {
+  for (my $y=0; $y<$Ysize; $y++) {
+    $XYDist[$x][$y] = ' ';
+  }
+}
+
+# main loop to ingest data
+while (<>) {
+	$_ = trim($_);
+	my $x = my @arr = split /$id/;
+	for (my $i = 0; $i < $x; $i++) {
+        # make sure all the things we're including are number-like
+        # remove commas to prevent rejection downstream
+        $arr[$i] =~ s/,//g;
+        # previous slightly shaky regex
+        #        if (($arr[$i] =~ /\d+|\d*\.\d*|\d+\.\d*[eE]-?\d+/) &&
+        #            ($arr[$i] !~ /[a-df-zA-DF-Z\[\]]+/) ) {
+        # stolen from https://docstore.mik.ua/orelly/perl4/cook/ch02_02.htm, 2.1.3
+        if ($arr[$i] =~/^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/) { 
+            if ($arr[$i] > $MINLIMIT && $arr[$i] < $MAXLIMIT) {
+                #$Data[$N++] = $arr[$i];  # store them for calcing the SD, etc
+                if (defined $xf) { # want to exec a transform; already checked that its supported.
+                # some of these are direct maps to perl-supplied functions; others have to be munged.
+                    my $v = $arr[$i];
+                    if    ($xf eq "pass")  { $arr[$i] = $v} # simply a filtering and passthru.
+                    elsif ($xf eq "log10") { if ($v > 0) { $arr[$i] = log($v) / log(10);} else { $arr[$i] = "NA";} }
+                    elsif ($xf eq "ln")    { if ($v > 0) { $arr[$i] = log($v);}           else { $arr[$i] = "NA";} }
+                    elsif ($xf eq "sqrt")  { if ($v >= 0) { $arr[$i] = sqrt($v);}         else { $arr[$i] = "NA";} }
+                    elsif ($xf eq "x^2")   { $arr[$i] *= ($v)}
+                    elsif ($xf eq "x^3")   { $arr[$i] = ($v)*($v)*($v)}
+                    elsif ($xf eq "1/x")   { $arr[$i] = 1 / $v }
+                    elsif ($xf eq "sin")   { $arr[$i] = sin($v) }
+                    elsif ($xf eq "cos")   { $arr[$i] = cos($v) }
+                    elsif ($xf eq "tan")   { $arr[$i] = sin($v) / cos($v) }
+                    elsif ($xf eq "asin")  { $arr[$i] = 1 / sin($v) }
+                    elsif ($xf eq "acos")  { $arr[$i] = 1 / cos($v) }
+                    elsif ($xf eq "atan")  { $arr[$i] = 1 / tan($v) }
+                    elsif ($xf eq "round") { $arr[$i] = int ($v + 0.5) }
+                    elsif ($xf eq "trunc") { $arr[$i] = int ($v) }
+                    elsif ($xf eq "frac")  { $arr[$i] = $v - int($v) }
+                    elsif ($xf eq "abs")   { $arr[$i] = abs($v) }
+                    elsif ($xf eq "exp")   { $arr[$i] = exp($v) }
+                }
+                if ($stdout) {
+                    my $y = $x-1;
+                    if ($gfmt) { printf "%g", $arr[$i]; if ($i<$y) {print "$od"} else {print "\n";} }
+                    else       { print "$arr[$i]";      if ($i<$y) {print "$od"} else {print "\n";} }
+                }
+                $sum += $arr[$i]; # sum the numbers as they come in
+                if ($N == 0) { $Min = $Max = $arr[$i]; }
+                if ($arr[$i] < $Min) { $Min = $arr[$i]; }
+                if ($arr[$i] > $Max) { $Max = $arr[$i]; }
+                $Data[$N++] = $arr[$i];  # store them for calcing the SD, etc
+            } elsif ($CAPTURE) {print CAP "$arr[$i]\n";}
+        }
+    }
+}
+
+if ($N == 0) {
+  print STDERR "(stats) ERROR on input, no usable data.  Check what you're feeding me.\n";
+  exit;
+}
+
+if (! $stdout) {
+    # All the numbers sucked in; now calc the values wanted
+
+    # autoscale the X axis 
+    $XRange = $Max - $Min;
+    if ($XRange != 0){
+        $XBinSize = $XRange/$Xsize;
+        $XMul = $Xsize/$XRange;
+    } else {
+        $XBinSize = -1;
+        $XMul = -1;
+    }
+
+    # if want to get mode, median, would help to sort $Data
+    @SData = sort {$a <=> $b}  @Data;
+
+    if ($N % 2 < 0.001) {
+        #then $N is even and we can calc median via...
+    $Median = ($SData[($N-1)/2] + $SData[(($N-1)+2)/2]) / 2;
+        $even = 1;
+    } else {
+        # then $N is odd and we can calc median via...
+    $Median = ($SData[($N+1)/2]) ;
+        $even = 0;
+    }
+    $Mean = $sum / $N;
+    $SumDiffs2 = 0;
+    $SumDiffs3 = 0;
+    $SumDiffs4 = 0;
+    $MaxSoFarValCnt = 0;
+    $ModeInd = 0;
+    $ValCnt = 0;
+    $Val = $SData[0];
+
+    #init Distribution array
+    for (my $i=0; $i<$Xsize; $i++){ $Dist[$i] = 0; }
+    $jmin = $jmax = 0;
+    for (my $i=0; $i < $N; $i++){
+        $SumDiffs2 = $SumDiffs2 + (($Data[$i] - $Mean)**2);
+        $SumDiffs3 = $SumDiffs3 + (($Data[$i] - $Mean)**3);
+        $SumDiffs4 = $SumDiffs4 + (($Data[$i] - $Mean)**4);
+
+        # this next stanza calculates the Mode pointer
+        if ($Val == $SData[$i]) {
+            # if its another of the same #, incr the counters
+            $ValCnt++;
+            $Val = $SData[$i];
+        } else { # it's a new value, so check if the run of the last set of #s
+                    # exceeds the longest so far
+            if ($ValCnt > $MaxSoFarValCnt) {
+                # and if so, replace the old values with the new 'winners'
+                $MaxSoFarValCnt = $ValCnt;
+                $ModeInd = $i-1;
+            }
+            $ValCnt = 0; # and reset the counters for the new
+        }
+        $Val = $SData[$i];
+
+        # calc the distribution
+        if ($XMul > 0) {
+                $J = int($Data[$i] * $XMul);
+                if ($J < $jmin) { $jmin = $J; }
+                if ($J > $jmax) { $jmax = $J; }
+                $Dist[$J]++;  # range of Dist should be close to $Xsize
+        } #else {print "\nErr: All #s same, no range, no distribution\n";}
+    }
+#vvvvvvvvv Don't include in golang version vvvvvvv
+    #Scale the Y axis; 1st find out the range for Y
+    $YMax = 0;
+    for (my $i=0; $i<$jmax; $i++) {
+        if (abs($Dist[$i]) > $YMax) { $YMax = abs($Dist[$i]);}
+    }
+    if ($YMax == 0) { $YMax = 1;}
+    $YBinSize = $YMax/($Ysize-1);
+    #print "\nYMax = $YMax\n";
+    $YMul = ($Ysize-1) / $YMax;
+    for (my $x=0; $x<$Xsize; $x++) {
+        my $y = int($Dist[$x] * $YMul);
+        $XYDist[$x][$y] = '*';
+    }
+#^^^^^^^^^^^^ Don't include in golang version ^^^^^^^^^^^^
+
+    ## Calc Quantiles
+    # not providing min/max values since they're already printed
+    # fill the array, create a string; no printing here.
+    if (defined $QUANTILE){
+        $QUANTSTR = "";
+        $cutindex = 0;
+        for (my $q=1; $q<$QUANTILE; $q++) {
+        my $inc = int(($N * ($q/$QUANTILE))+1); #print "inc = [$inc]\n";
+            $cutindex = $inc - 1;   
+            my $cutvalue =  $SData[$cutindex];
+            $QUANT[$q][0] = $cutindex; $QUANT[$q][1] = $cutvalue; 
+            $QUANTSTR .= "$q\t$cutindex\t$cutvalue\n";
+        }
+    }
+    
+        if ($MaxSoFarValCnt > 1) {
+            $ModeNum = $MaxSoFarValCnt + 1;
+            $Mode = $SData[$ModeInd];
+        } else {
+            $ModeNum = "No # was represented more than once";
+            $Mode = "FLAT";
+        } 
+        # set up the @OUT hash
+        $OUT{"Sum"} = $sum;
+        $OUT{"Number"} = $N;
+        $OUT{"Mean"} = $Mean;
+        $OUT{"Median"} = $Median;
+        $OUT{"Mode"} = $Mode;
+        $OUT{"NModes"} = $ModeNum;
+        $OUT{"Min"} = $Min;
+        $OUT{"Max"} = $Max;
+        $OUT{"Range"} = $XRange;
+        $OUT{"Variance"} = $S2 = $SumDiffs2 / ($N - 1);
+        $OUT{"Std_Dev"} = $S = sqrt($S2);
+        ## Check this formula (this looks like it's normalized to 0; should be 3
+        ## and also add the population-normalized Kurtosis  Or not..?  Kurtosis is 
+        ## a pretty useless measure.
+        $OUT{"SEM"} = $SEM = $S / sqrt($N);
+        if ($S > 0 && $N > 3) {
+        $OUT{"Skew"} = $Skew = ($N * $SumDiffs3) / (($N-1) * ($N-2) * ($S ** 3));
+        $OUT{"Std_Skew"} = $StdSkew = $Skew / sqrt(6/$N);
+        $ConfIntHi  = $Mean + ($ConfMult{$CONFINT} * ($S/sqrt($N)));
+        $ConfIntLow = $Mean - ($ConfMult{$CONFINT} * ($S/sqrt($N)));
+        $OUT{"Conf_Int"} = sprintf("%g:%g",$ConfIntLow,$ConfIntHi);
+        $OUT{"Quantiles"} = $QUANTSTR;
+        }
+        
+    # only try to calculate this if $XMul > 0 (otherwise div by zero)
+    if ($XMul > 0) {
+        $OUT{"Kurtosis"} = $Kurtosis = $SumDiffs4 / ($N * $S**4);
+        # was $OUT{"Kurtosis"} = $Kurtosis = ($SumDiffs4 / (($N-1)*($S**4))) - 3;
+        if ($N > 3) {
+          $OUT{"PopKurt"} = $PopKurtosis = ($N * ($N+1)) / (($N-1) * ($N-2) * ($N-3)) * $Kurtosis - ((3*($N-1)^2) / (($N-2) * ($N-3)));
+        } else {$OUT{"PopKurt"} = "UNDEF";}
+     }   
+
+
+    if (!$ONLY && !$wide && $gfmt == 0) {  # don't include in golang version
+    print  "Sum       $sum",
+            "\nNumber    $N",
+            "\nMean      $Mean",
+            "\nMedian    $Median",
+            "\nMode      $Mode  ",
+            "\nNModes    $ModeNum",
+            "\nMin       $Min",
+            "\nMax       $Max",
+            "\nRange     $XRange",
+            "\nVariance  $S2",
+            "\nStd_Dev   $S",
+            "\nSEM       $SEM",
+            "\n${CONFINT}% Conf  $ConfIntLow to $ConfIntHi",
+            "\n          [for a normal distribution (ND) - see Skew & Kurtosis]",
+            "\nQuantiles ($QUANTILE)\n\tIndex\tValue\n$QUANTSTR";
+    } elsif (!$ONLY && !$wide && $gfmt > 0) {  # shorten this post verify
+    printf   "Sum       %g",$sum;
+    printf "\nNumber    %g",$N;
+    printf "\nMean      %g",$Mean;
+    printf "\nMedian    %g",$Median;
+    printf "\nMode      %g",$Mode;
+    printf "\nNModes    %g",$ModeNum;
+    printf "\nMin       %g",$Min;
+    printf "\nMax       %g",$Max;
+    printf "\nRange     %g",$XRange;
+    printf "\nVariance  %g",$S2;
+    printf "\nStd_Dev   %g",$S;
+    printf "\nSEM       %g",$SEM;
+    printf "\n%d% Conf  %g to %g", $CONFINT, $ConfIntLow, $ConfIntHi;
+    print  "\n          [for a normal distribution (ND) - see skew]";
+    print  "\nQuantiles ($QUANTILE)\n\tIndex\tValue\n$QUANTSTR";
+    }
+    if (!$ONLY && $S > 0 && $N > 3 && !$wide) {
+        if (!$gfmt) {
+            print  "Skew      $Skew",
+                "\n          [Skew=0 for a symmetric dist]",
+                "\nStd_Skew  $StdSkew",
+                "\nKurtosis  $Kurtosis",
+                "\n          [Kurtosis=3 for a normal dist (ND)]",
+                "\nPopKurt   $PopKurtosis",
+                "\n          [Pop'n Kurtosis is normalized to sample size; PK=0 for a ND]\n"
+        } else {
+            printf   "Skew      %g", $Skew;
+            print  "\n          [Skew=0 for a symmetric dist]";
+            printf "\nStd_Skew  %g", $StdSkew;
+            printf "\nKurtosis  %g", $Kurtosis;
+            print  "\n          [Kurtosis=3 for a ND]";
+            printf "\nPopKurt   %g", $PopKurtosis;
+            print  "\n          [Pop'n Kurtosis is normalized to sample size; PK=0 for a ND]\n"
+        }
+    } elsif (!$ONLY && !$QUIET) {
+        print STDERR "(stats): #Std Dev = 0 or N <=3 or printing wide; Skipping all Skewness & Kurtosis cal'ns.\n";
+    }
+
+    if (!$ONLY && $wide) {
+        if (!$NWH){
+            print  "# (Quantiles not printed in wide mode.)
+    #Sum\tN\tMean\tMedian\tMode\tNModes\tMin\tMax\tRange\tVariance\tStd_Dev\tSEM\t95%L\t95%H\tSkew\tStd_Skew\tKurtosis\n";
+        }
+        if ($gfmt) {
+            printf "%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g", $sum,$N,$Mean,$Median,$Mode,$ModeNum,$Min,$Max,$XRange,$S2,$S,$SEM,$ConfIntLow,$ConfIntHi;
+        } else {
+            print "$sum\t$N\t$Mean\t$Median\t$Mode\t$ModeNum\t$Min\t$Max\t$XRange\t$S2\t$S\t$SEM\t$ConfIntLow\t$ConfIntHi";
+        }
+        if ($S > 0 && $N > 3) {
+            if ($gfmt) {
+                printf "\t%g\t%g\t%g\t%g\n", $Skew,$StdSkew,$Kurtosis,$PopKurtosis;
+            } else { print "\t$Skew\t$StdSkew\t$Kurtosis\t$PopKurtosis\n";}
+        } elsif (! $QUIET) {
+            print  STDERR "(stats): NA\tNA\nStd Dev = 0 or N <=3; Skipping all Skewness & Kurtosis cal'ns.\n";
+        }
+    }
+
+    # print out the distribution
+    # this way prints it out in 1 line
+    if ($dist == 1 || $dist == 3) {
+        for (my $r=0; $r<($Xsize); $r++) {
+            if ($Dist[$r] < 10) { print $Dist[$r]; }
+            else { print "($Dist[$r])"; }
+        }
+    }
+    # if used only 1 option, print out the single number requested
+    if ($ONLY == 1) {
+        if ($pQUANTILE) {
+            printf "Quant\tIndex\tValue\n%s", $OUT{$pr[0]};
+        } elsif ($pCONF) {
+             printf "%s%s",$OUT{$pr[0]},$od; 
+        } else {
+            printf "%g\n",$OUT{$pr[0]};
+        }
+    } elsif ($ONLY > 1) {
+        print "#";
+        for (my $r=0;$r<=$#pr; $r++) {
+            printf "%12s%s", $pr[$r],$od;
+        } print "\n";
+        for (my $r=0;$r<=$#pr; $r++) {
+            if ($r == $pConfindex) { printf "%s%s",$OUT{$pr[$r]},$od; }
+            elsif ($r != $pQindex) {
+                printf "%12g%s",$OUT{$pr[$r]},$od;
+            } elsif ($pQUANTILE) {
+                printf "(quantiles next lines)\nQuant\tIndex\tValue\n%s",$OUT{$pr[$r]},$od;
+            }
+        } print "\n";
+    }
+    
+    # if used selective options, print out the selected bits
+    # omit from golang version
+    # this way prints a little xy graph, if wanted
+    my $spacer = "";
+    for (my $x=0; $x<($Xsize - 14); $x++) { $spacer = $spacer . " ";}
+
+    if ($XBinSize > 0) {
+        if ($dist == 2 || $dist == 3) {
+            print "\n\nDistribution\nX BinSize $XBinSize\nY BinSize  $YBinSize\n\nYMax:$YMax\n      |";
+            for (my $y=($Ysize-1); $y>=0; $y--) {
+                for (my $x=0; $x<$Xsize; $x++) { print "$XYDist[$x][$y]"; }
+                print "\n      |";
+            }
+            for (my $x=0; $x<$Xsize; $x++) { print '-';}
+            print "\n  X Min $spacer        X Max\n";
+            printf "%7.2f %s %12.2f \n", $Min, $spacer, $Max;
+            if (!$ln) {
+                print "\nIf points are jammed at one end, use '--xf=ln' to spread them.\n";
+            }
+        }
+    } elsif ($dist != 0) {
+        print STDERR "\n(stats): Identical numbers in input; no range, no distribution\n";
+    }
+}
+ 
+ 
+sub trim($)	{
+	my $string = shift;
+	$string =~ s/^\s+//;
+	$string =~ s/\s+$//;
+	return $string;
+}
+
+sub usage {
+my $LESSHELP = <<HELP;
+ stats version: $VERSION, last mod: $DATE
+ Harry Mangalam <hjmangalam\@gmail.com>
+ Lives with 'scut' and 'cols' here: <https://github.com/hjmangalam/scut>
+
+ 'stats' is a utility that reads STDIN for all #s, whether in one line
+ or in many (removes commas, checks for text contaminants; only have to 
+ be separated by whitespace), calculates some basic stats, then spits 
+ them to STDOUT.  Starting from this version, the default is to format the 
+ test in Perl's General Numeric Format (gfmt), altho you can ask for the raw
+ output with '--raw'.
+ 
+ New in 2.0.8, you can ask for specific output with the options listed below.  
+ If you ask for a single output '--sum', it will be emitted as a single, 
+ naked number.  If you ask for multiple specific outputs, they will 
+ have a #-prefixed line of headers above the numbers, roughly aligned and 
+ separated by the output delimiter ('--od', by default a <tab>).
+ If you don't ask for specific stats, all will be emitted as shown in the
+ example stanza below. 
+ 
+ Starting in V2.x, you can choose from a small set of transforms (see 
+ below) to be applied to the data and then emitted with '--stdout' 
+ (thus using stats as a transform filter) or  have the stats applied 
+ to that transformed data.
+
+ usage: stats < file.of.numbers
+     or
+ cmd1 | cmd2 |cmd3 | stats [options]
+
+ where Options are:
+       --help .......................................   dumps this help
+       --nwh ...... 'No Wide Headers' (no headers on wide output output
+                        good for repeating output as for logging stuff)
+       --xf="fn" ..... to transform STDIN before doing the stats, where
+                         "fn" is one of log10, ln, sqrt, x^2, x^3, 1/x, 
+                       sin, cos, tan, asin, acos, atan, round, abs, exp, 
+                 pass(thru), trunc (integer part), frac (decimal part). 
+       --stdout ....... JUST print STDIN to STDOUT (don't do any stats)
+                                          (--xf also applies to STDOUT)
+       --id="token" .... Input delimiter; defaults to whitespace (\\s+)
+       --od="token" ........... Output delimiter; defaults to tab (\\t)
+       --minlimit=# .............. sets a MINIMUM limit to filter input
+       --maxlimit=# .............. sets a MAXIMUM limit to filter input
+                                      above 2 line also set the filters
+                                   for the transforms (--xf, see above)
+       --capture ...... captures the exceptions from the above 2 limits
+                                  to file 'stats.exceptions' in the cwd
+       --conf=# ............... the confidence interval of the set; one
+               of 80, 85, 90, 95, 99, 99.5, or 99.9.  If the confidence 
+             interval is smaller, the range of values will of course be 
+                 be larger. Assumes normal distribution - see warnings.
+       --gfmt ............. output in Perl's 'general numeric notation'
+                                                          (now default)
+       --raw ............................... unformatted numeric output
+       --quiet ...................... decrease amount of error messages
+       --wide . writes the stats in 1-line, useful for some spreadsheet
+                apps. Omits Quantiles.  Use cols/column/columns to view
+                aligned columns. See example below..
+       --dist=# .................. plots a distribution function where:
+                          # = 1 = 1-liner distribution
+                              2 = the std xy plot of the data
+                              3 = both 1 liner & longer version
+         (hint: pipe '--stdout' into 'feedgnuplot' for better plotting)
+       --x=# ..................where # = an integer indicating the # of
+                                               characters in the X axis
+       --y=# ..................................... ditto for the y axis
+
+       ## the following options specifically request the related values
+       --sum ...........................  the total of all input values
+       --num ............................... the number of input values
+       --mean ............................... the average of all values
+       --median ...................the approx value above & below which 
+                                   there are the same number of values.
+       --mode .........................  the most frequently seen value
+       --nmodes ................................... the number of modes
+       --min ............................. the minimum value in the set
+       --max ............................. the maximum value in the set
+       --range .............................................. max - min
+       --var .................................. the variance of the set
+       --sd .............................. the std deviation of the set
+       --sem ..................... the std error of the mean of the set
+       --skew ............ an estimate of the non-normalilty of the set
+                               a normal distribution will have skew = 0
+       --stdskew ............... skew normalized to the size of the set
+       --kurt ........ kurtosis is a measure of the 'tailedness' of the 
+                          distribution. A normal distribution will have 
+                          kurtosis = 3.
+       --popkurt ............. kurtosis normalized to the sample size & 
+                          adjusted to be zero for a normal distribution
+       --quantile=#  ........ sets the number of quantiles to calculate
+       --qq  ..... prints the quantiles requested by the '--quantile=#'
+                     option above. Outputs 3 values: the # of quantile, 
+                      the index of the sorted array holding the values, 
+                              and the value of the array at that index.
+                     The quantile output can't easily be put in 1 line,
+                     so it spills over into multiple lines.
+
+Performance isn't stellar - it's Perl.  A rough estimate is about 128K
+integers / sec with about 180bytes per integer RAM usage on a Thinkpad
+T530 (Intel i5-3210M cpu @ 2.50GHz).  Feel free to convert it C.
+
+Example 1:
+=======================================================================
+Get only the sum and mean of the input data:
+
+\$ cat 'file-of-numbers.txt' | stats --sum --mean
+#         Sum           Mean  
+ 1.12697e+11     2.10727e+07  
+
+Example 2:
+=======================================================================
+ Get only the sum of the input data:
+
+\$ cat 'file-of-numbers.txt' | stats --sum
+ 1.12697e+11
+(note that ONLY the result is printed; no headers)
+ 
+Example 3:
+=======================================================================
+Print output wide: (as it appears in 'less')
+\$ cat 'file-of-numbers.txt' | stats --wide | cols | less
+#Std Dev = 0 or N <=3 or printing wide; Skipping Skewness, Std Skewness cal'n.
+      1      0           1        2        3      4       5       6     7      8 ...
+      2      #  (Quantiles      not  printed     in    wide  mode.)     -      - ...
+      3   #Sum           N     Mean   Median   Mode  NModes     Min   Max  Range ...
+      4 134418        3200  42.0056    41.98  41.94      22   38.33  45.7   7.37 ...
+ 
+Example 4:
+=======================================================================
+Calculate the file size distribution in the current directory:
+
+\$ ls -l | awk '{print \$5}'  | stats  --dist=2 --x=20 --y=10
+Number    401
+Mean      1.10608e+07
+Median    10642
+Mode      4096
+NModes    13
+Min       0
+Max       1.88495e+09
+Range     1.88495e+09
+Variance  1.15667e+16
+Std_Dev   1.07549e+08
+SEM       5.37073e+06
+95% Conf  534133 to 2.15874e+07
+          [for a normal distribution (ND) - see skew]
+Quantiles (5)
+        Index   Value
+1       80      226
+2       160     3400
+3       240     21132
+4       320     438552
+Skew      14.5696
+          [Skew=0 for a symmetric dist]
+Std_Skew  119.109
+Kurtosis  237.437
+          [Kurtosis=3 for a ND]
+PopKurt   0.594993
+          [Pop'n Kurtosis is normalized to sample size; PK=0 for a ND]
+
+** This assumes normal distribution , but since this distribution is 
+   extremely skewed (see above Kurtosis value, and the plot below), the 
+   confidence limits will be incorrect.
+   (For a web page that calculates more descriptive stats, including 
+   estimation of normality, see: <http://www.xuru.org/st/DS.asp>
+   For specific plots or analyses, see: <http://www.wessa.net/desc.wasp>
+
+Distribution
+X BinSize 94247474.3
+Y BinSize  43.8888888888889
+
+YMax:395
+      |*                   
+      |                    
+      |                    
+      |                    
+      |                    
+      |                    
+      |                    
+      |                    
+      |                    
+      | *******************
+      |--------------------
+  X Min               X Max
+   0.00        1884949486.00 
+
+If points are jammed at one end, use '--xf=ln' to spread them.
+
+** This assumes normal distribution, but since this distribution is 
+   extremely skewed, the confidence limits will be inaccurate.
+   (for a web page that calculates more descriptive stats, including 
+   estimation of normality, see: http://www.xuru.org/st/DS.asp
+   for specific plots or analyses, see: http://www.wessa.net/desc.wasp
+=======================================================================
+
+Example 5:
+=======================================================================
+Calculate the file size distribution in the current directory with the 
+suggested ln transform.  
+NB: the stats are calculated with the transformed data.
+
+\$ ls -l | awk '{print \$5}'  | stats --xf='ln' --dist=2 --x=20 --y=10
+
+Sum       3697.07
+Number    401
+Mean      9.21961
+Median    9.27256
+Mode      8.31777
+NModes    13
+Min       0
+Max       21.3572
+Range     21.3572
+Variance  17.2889
+Std_Dev   4.15799
+SEM       0.20764
+95% Conf  8.81264 to 9.62659
+          [for a normal distribution (ND) - see skew]
+Quantiles (5)
+        Index   Value
+1       80      5.42053499927229
+2       160     8.13153071060425
+3       240     9.95854375828421
+4       320     12.9912336698525
+Skew      0.114128
+          [Skew=0 for a symmetric dist]
+Std_Skew  0.933012
+Kurtosis  2.61252
+          [Kurtosis=3 for a ND]
+PopKurt   -0.000939166
+          [Pop'n Kurtosis is normalized to sample size; PK=0 for a ND]
+
+
+Distribution
+X BinSize 1.06785834298047
+Y BinSize  5.33333333333333
+
+YMax:48
+      |       *            
+      |         *          
+      |        *           
+      |           *        
+      |    **       *      
+      |      *   *         
+      |   *        * *     
+      | **                 
+      |*              *    
+      |                ****
+      |--------------------
+  X Min               X Max
+   0.00               21.36 
+
+If points are jammed at one end, use '--xf=ln' to spread them.
+
+ = Hint: while the above plotting function is better than nothing, 
+ consider using the excellent 'feedgnuplot' to plot columns of numbers. 
+ ex:  scut/cut [options] | feedgnuplot --lines --points 
+
+   
+ Feel free to add whatever additional calculations you want,
+ but if you do and you think they might be of general use,
+ let me know so I can add them to the original.  
+ 
+ Help me make it better; send bug reports, suggestions back to the author:
+ <hjmangalam\@gmail.com>
+ 
+
+HELP
+
+$HELPFILE = ".statshelpfile" . $$; # write a hidden helpfile
+open(HF, ">$HELPFILE") or die "Can't open helpfile [$HELPFILE] at __LINE__ \n";
+print HF $LESSHELP;
+close HF;
+system("$pager $HELPFILE");
+unlink $HELPFILE; # and get rid of it asap
+exit 0;
+}
+
+exit 0;
