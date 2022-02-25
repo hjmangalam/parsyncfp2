@@ -8,20 +8,18 @@
 # If not it is available at the parsyncfp github site:
 #      https://github.com/hjmangalam/parsyncfp
 
-# ### this version consains the consolidated startup and main loop.  It works generally
-# but has not been tested robustly, nor in the MH format.  Going to copy it to pfp2c-losf
-# and start working on adding the losf option now. [Sept 5, 2021]
+# ### this version contains the consolidated startup and main loop.  
 
-# modify for allowing the executable to be renamed and stop.
-# the losf stuff in MH mode (in pfp2c-losf) will require a better approach.  The current pfp2c-losf works 
-# fine in SH mode, 
+# TODO: (LOSF fork only) modify for allowing the executable to be renamed and stop.
+# the losf stuff in MH mode (in pfp2c-losf) will require a better approach.  
+# The current pfp2c-losf works fine in SH mode, 
 # but falls apart in MH mode bc the g2g_*** stuff won't transfer across hosts.  It would require a 
 # file-based approach. So instead of using the g2g_-based trackers, return to using f.# but processed as 
 # the g.# and s.# files.  They're distinguished not by file name but by wc of the file & the contents 
 # (1 file, ends in tar.lz4.pfp).  But, instead of being able to do the lookahead via filenames, going 
 # to have to do them via actually reading, evaluating the f.# file.
 
-##: == COMMON TO MASTER & SLAVES ==
+##: == COMMON TO MASTER & SEND hosts ==
 ##: Lib Requirements
 use strict;
 use Getopt::Long;    # for std option handling: -h --yadda=badda, etc
@@ -51,10 +49,6 @@ use Term::ANSIColor;    # for alarms
 # Add changes to changelog in the README.md file
 # check github for bug reports.
 
-# TODO - recent; old ones moved to ~/gits/parsyncfp/pfp-changes.txt
-# have the too-many chunkfile warnings printed with the column headers, 
-# not every time the data is printed.
-
 
 ##: Global Vars
 use vars qw($allPIDs $ALL_SYS_RSYNC_PIDS $ch $CHECKPERIOD $cmd
@@ -62,7 +56,7 @@ use vars qw($allPIDs $ALL_SYS_RSYNC_PIDS $ch $CHECKPERIOD $cmd
   $EMAIL $Filecnt %FILES $fl $fn $fnd2r $FOUT $FPART_LOGFILE $FPART_PID
   $FPARTSIZE $FPARTSIZE_N $FP_PIDFILE $FP_ROOT $FP_ROOT_DIR
   $FP_HOLD_ROOT $FP_HOLD_DIR $cyclecnt $OTHERFPRNG $MYFPRNG
-  $hdr_cnt $hdr_rpt $HELP $IF_SPEED $VERBOSE $FP_SAVE_DIR $PFPSTOPSCRIPT
+  $hdr_cnt $hdr_rpt $HELP $IF_SPEED $VERBOSE $FP_SAVE_DIR $PFP2STOPSCRIPT
   $LOAD1mratio $loadavg $logfile $HOSTNAME $MAXBW $MAXLOAD $NBR_FP_FLES
   $NBR_FP_FLES $NCPUs $NDIRS $NETIF $NOWAIT $NP $NP_chunk $glob $ALTCACHE
   $parsync_dir $PARSYNCVER $RSYNC_PIDFILE $prev_cache $lenPID $DISPOSE
@@ -75,7 +69,7 @@ use vars qw($allPIDs $ALL_SYS_RSYNC_PIDS $ch $CHECKPERIOD $cmd
   $DONE $bytesxf $rprtnbr $sfx $ALLBYTES $SENDHOSTSEQ $CUR_FPI_v $RTT $RTT_DELAY $SLOWDOWN
   @NETDEVLIST $NETDEVADDRLIST @spinner $defREMOTEPATH $HOSTLIST $COMMONDIR $UDR
   $SKIPFPART $MULTIHOST @SENDHOSTS @RECHOSTS $nbrhosts $REMOTECMD $FPSTART $FPSTRIDE
-  $RPATH $RPATHPFX @UTILITIES $SKIPCOMPRESS $rUSER $rPATH $BIGFILES $REUSECHUNKS
+  $RPATH $RPATHPFX @UTILITIES $SKIPCOMPRESS $rUSER $rPATH $BIGFILES  $SKIPTO
   $R2 $T2 $RDMA_T2 $RDMA_R2 $R1 $T1 $RDMA_T1 $RDMA_R1 $avgTCPsend @rsyncs_2_rpt
   );
 
@@ -83,8 +77,8 @@ use vars qw($allPIDs $ALL_SYS_RSYNC_PIDS $ch $CHECKPERIOD $cmd
 my @argv = @ARGV;
 $FPSTART = 0;              # trivial check to print only one header
 $PARSYNCVER  = << "VERSION";
-parsyncfp version 2.41 (Merle)
-Feb 18, 2022
+parsyncfp version 2.43 (Cooper)
+Feb 24, 2022
 by Harry Mangalam <hjmangalam\@gmail.com>
 
 parsyncfp is a Perl script that wraps the near-miraculous Tridgell/
@@ -93,15 +87,15 @@ network connections to increase the amount of bandwidth it can use.
 The 'fp' variant uses 'fpart' to bypass the need for a full recursive 
 descent of the dir trees before the actual transfer starts.
 Versions >2 allow multihost sends to increase bandwidth saturation
-WARNING: Do NOT use any '--delete*' options in '--rsyncopts'.  
+WARNING: Do NOT use any '--delete*' options in '--ro'.  
 parsyncfp is distributed under the Gnu Public License (GPL) v3.
 VERSION
 
 ##: Getopt options & Setup
 &GetOptions(
   "startdir|sd=s"    => \$ROOTDIR,        # Have to be able to set rootdir -> SRC in rsync
-  "altcache|ac=s"    => \$ALTCACHE,       # alternative cache instead of ~/.parsyncfp
-  "rsyncopts|ro=s"   => \$RSYNCOPTS,      # passthru to rsync as a string
+  "altcache|ac=s"    => \$ALTCACHE,       # alternative cache instead of ~/.pfp2
+  "ro=s"             => \$RSYNCOPTS,      # passthru to rsync as a string
   "NP|np=i"          => \$NP,             # number of rsync processes to start
   "chunksize|cs=s"   => \$FPARTSIZE,      # the size that fpart chunks (allow PpTtGgMmKk)
   "checkperiod|cp=i" => \$CHECKPERIOD,    # # of sec between system load checks
@@ -115,7 +109,8 @@ VERSION
   "verbose|v=i"   => \$VERBOSE,     # how chatty it should be.
   "nowait|nw!"    => \$NOWAIT,      # sleep a few s rather than wait for a user ack
   "slowdown|sd=f" => \$SLOWDOWN,    # introduce x seconds between commands to other SEND & REC hosts
-                                    # crudely set by ping time in checkhost() now but use this to make explicit.
+                                    # crudely set by ping time in checkhost() now but use this 
+                                    # to make explicit.
   "help!"         => \$HELP,        # dump usage, tips
   "version|V!"    => \$VERSION,     # duh..
   "dispose=s"     => \$DISPOSE,     # what to do with the cache (compress, delete, leave untouched)
@@ -127,8 +122,9 @@ VERSION
   "commondir=s"   => \$ALTCACHE,    # alias for ALTCACHE. If it's the multihost version, you have to
                                     # 'mkdir $ALTCACHE/hostname' & write all their logs, etc in there, but
                                     # read the fpart chunks from $ALTCACHE
-  "reusechunks!"  => \$REUSECHUNKS, # reuse the fpart chunck cache; don't run fpart again, very useful useful
-                                    # for failed runs that need to be restarted
+  "reusechunks:i"  => \$SKIPTO,     # reuse the fpart chunck cache; don't run fpart again, very useful useful
+                                    # for failed runs that need to be restarted; the optional integer is the 
+                                    # step to skipto.  If no int passed, it defaults to 0 (incr to 1)
   "fpstart=i"     => \$FPSTART,     # non-user: per-host chunk START number
   "fpstride=i"    => \$FPSTRIDE,    # non-user: chunk STRIDE number - same for all hosts, but needs to be passed
   "skipfpart!"    => \$SKIPFPART,   # non-user: tell SEND hosts to skip their own fpart launches
@@ -136,7 +132,7 @@ VERSION
   "mstr_md5=s"    => \$MSTR_MD5,    # non-user: the master parsyncfp2 checksum to compare with slave $MD5SUM
   "checkhost!"    => \$CHECKHOST,   # request that pfp check remote send and rec hosts to make sure that all
 # the rsyncs have finished
-  "rpathpfx=s"    => \$RPATH,       # the remote PATH prefix on the SLAVES for the bits needed to run this.
+  "rpathpfx=s"    => \$RPATH,       # the remote PATH prefix on the SEND hosts for the bits needed to run this.
   
 );
 
@@ -169,15 +165,10 @@ if ( defined $SKIPFPART && defined $MSTR_MD5 ) {
   and the SEND host parsyncfp2 [$0] are 
   not the same version (non-matching MD5 checksums).  This will end badly.  
   Please assure that your PATH allows the correct parsyncfp2 (or whatever you've named it) 
-  to be found.  The slave parsyncfp2 program should be in [$HOME/.pfp]"
+  to be found.  The SEND host parsyncfp2 program should be in [${parsync_dir}]"
     );
   }
 }
-
-#   my $rem_rsyncs = `ssh bridgit 'ps ux | grep plasm[a]| wc -l'`; chomp $rem_rsyncs;
-#   print __LINE__, ": There are [$rem_rsyncs] rsyncs still going on [$rem_host] at this point\n\n"; 
-#   exit;
-
 
 ##: Declare run-permanent vars
 @spinner = ( '-', '\\', '|', '/' );    # for spinner symbol 
@@ -187,10 +178,20 @@ if ($SKIPFPART) {
 } else {
   $DATE = `date +"%T_%F" | sed 's/:/./g' `; chomp $DATE;    # master sets the date.
 }
-if   ( !defined $ALTCACHE ) { $parsync_dir = "${HOME}/.pfp"; }
-else                        { $parsync_dir = "${ALTCACHE}/.pfp"; }
-#print __LINE__, ": ALTCACHE = [$ALTCACHE], parsync_dir = [$parsync_dir]\n";
-if (!defined $REUSECHUNKS) { $REUSECHUNKS = 0; } # if don't want to reuse cache, don't
+if   ( !defined $ALTCACHE ) { $parsync_dir = "${HOME}/.pfp2"; }
+else                        { $parsync_dir = "${ALTCACHE}/.pfp2"; }
+
+# if -reusechunks not used, it's undefined, then set to -1 below, if doesn't have an int arg, set to 0
+# in any case i fit's used, it either starts at 0 (--reusechunk alone) or is 
+# decremented by 1 which is the correct handling.
+if (! defined $SKIPTO) { $SKIPTO = -1; }  # only way that $SKIPTO can be <0
+#print __LINE__, ": SKIPTO HANDLING: SKIPTO = [$SKIPTO]\n";
+if ($SKIPTO == 0) { $SKIPTO = 1; }
+#print __LINE__, ": SKIPTO HANDLING: SKIPTO = [$SKIPTO]\n";
+if ($SKIPTO > 0) { $SKIPTO--; } # the printed index is CURFPI+1 (skipto=13 prints index 14.)
+elsif ($SKIPTO < -1) { FATAL("'--reusechunks' value must be > 1. Please try again."); }
+#print __LINE__, ": FINAL SKIPTO HANDLING: SKIPTO = [$SKIPTO]\n";
+
 $DBC       = 0;
 $MULTIHOST = 0;
 $NETFILE   = "/proc/net/dev";
@@ -217,9 +218,9 @@ $DFLT_RSYNCOPTS = "-asl ";    # the default options to pass to rsync; blanked if
 $FP_SAVE_DIR   = $parsync_dir;
 $FP_ROOT_DIR   = "${parsync_dir}/fpcache";
 $FP_HOLD_DIR   = "${FP_ROOT_DIR}/hold";
-$PFPSTOPSCRIPT = "~/.pfp/pfpstop";
+$PFP2STOPSCRIPT = "${parsync_dir}/pfp2stop";
 if ( defined $ALTCACHE && defined $SKIPFPART ) {
-  $ALTCACHE .= "/.pfp/${HOSTNAME}";    # stuff everything into a .pfp subdir to keep it away from user files.
+  $ALTCACHE .= "/.pfp2/${HOSTNAME}";    # stuff everything into a .pfp subdir to keep it away from user files.
   $parsync_dir = $ALTCACHE;
   if ($DEBUG) { DEBUG( __LINE__,  "parsync_dir = $parsync_dir" ); }
 }
@@ -235,6 +236,7 @@ if ( !-d "$parsync_dir" ) {
   make_path "$parsync_dir"
     or FATAL("Can't create the required parsyncfp logging dir [$parsync_dir]");
 }
+
 # set up a special file to log suspend and unsuspends PIDs to see where/if they get mixed up.
 # number the suspended PIDs to see when / if they get unsuspended.
 open( SUSLOG, "> $parsync_dir/suspend.log" )
@@ -257,10 +259,10 @@ $LOAD1mratio = $SYSLOAD[0] / $NCPUs;
 
 
 ##: Define & init Getopt flag vars
-if ( defined $HELP ) { print __LINE__; usage($parsync_dir); }
+if ( defined $HELP ) { usage($parsync_dir); }
 if ( !defined $RPATH ) {
-  $RPATHPFX = "export PATH=~/.pfp:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:\$PATH;";
-} else { $RPATHPFX = "export PATH=${RPATH}:~/.pfp:/usr/sbin:/sbin:/usr/bin:/bin:\$PATH;" }
+  $RPATHPFX = "export PATH=${parsync_dir}:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:\$PATH;";
+} else { $RPATHPFX = "export PATH=${RPATH}:${parsync_dir}:/usr/sbin:/sbin:/usr/bin:/bin:\$PATH;" }
 
 # UDR not currently working until I can test it on ESNET
 if   ( !defined $UDR )        { $UDR = ""; }
@@ -300,16 +302,14 @@ if ( $RSYNCOPTS =~ /-[a-zA-Z]+[vh]/ || $RSYNCOPTS =~ /-[vh]/ ) {
 if ( !defined $RSYNCOPTS ) {
   $RSYNCOPTS = ""; $RSYNCOPTS = " -asl ";
 } elsif ( $RSYNCOPTS !~ /-/ ) {
-  FATAL(
-    "You didn't have a '-' in your '--rsyncopts' string. 
-    You need to supply the options exactly as you would with rsync, with 
-    leading '-' or '--'. Try again.."
-  );
+  FATAL("You didn't have a '-' in your '--ro' string. 
+  You need to supply the options exactly as you would with rsync, with 
+  leading '-' or '--'. Try again..");
 } else {    # if def $RSYNCOPTS, then user takes all responsibility
   $DFLT_RSYNCOPTS = "";
   if ( $RSYNCOPTS =~ / -d / || $RSYNCOPTS =~ / --del/ ) {  # user tries to pass in a 'delete' option
     FATAL("It looks like you're trying to pass in a '--delete' option 
-  in the '--rsyncopts' string.  [$RSYNCOPTS]
+  in the '--ro' string.  [$RSYNCOPTS]
   Because parallel rsyncs don't know what the other rsyncs are doing, 
   'delete' options don't work well. If this is what you want to do, 
   omit that option here and follow the parsyncfp command with a regular 
@@ -332,8 +332,7 @@ if ( !defined $RSYNCOPTS ) {
 # this takes care of the last ARGV so that all the rest of the words are target dirs&files
 $TARGET = $ARGV[$#ARGV];    # remote rsync target
 if ( !defined $TARGET ) {
-  FATAL(
-    "No target defined! Where you gonna put this stuff??!?\nTry '--help' for the built-in help.");
+  FATAL("No target defined! Where you gonna put this stuff??!?\nTry '--help' for the built-in help.");
 }
 
 $#ARGV--;
@@ -410,7 +409,7 @@ if ( defined $HOSTLIST ) { # should never be processed by the SEND hosts.
 
   # if no '~/.pfp/hostchecked' file, warn that you should run with --checkhost at least once 
   # to sync utils.
-  if (! -e "~/.pfp/hostchecked" && !defined $CHECKHOST ) {
+  if (! -e "${parsync_dir}/hostchecked" && !defined $CHECKHOST ) {
     WARN("Looks like you've never asked for the '--checkhost' option. 
   You should run it at least once to make sure the utilities are synced 
   across send hosts. Especially if you've been messing with them.  Just sayin..");
@@ -442,15 +441,15 @@ if ( defined $HOSTLIST ) { # should never be processed by the SEND hosts.
     if ($CHECKHOST) {    # add to checkhost() when thrashed out.
                          # checking utilities required and providing them if not.
                          # this has to be DISallowed when communicating to an rsyncd server.
-      if ( $VERBOSE > 2 ) { INFO("Sending utilities [$allutils] to [$a[0]:~/.pfp)]\n"); }
+      if ( $VERBOSE > 2 ) { INFO("Sending utilities [$allutils] to [$a[0]:${parsync_dir}]\n"); }
 
       # do it to self as well
-      my $ucmdo = `rsync $allutils $a[0]:~/.pfp 2> /dev/null`;
+      my $ucmdo = `rsync $allutils $a[0]:${parsync_dir} 2> /dev/null`;
       chomp $ucmdo;    # $parsync_dir is already added to $RPATHPFX above
       if ( $ucmdo ne "" ) {
         WARN("rsync of required/recommended utilites resulted in: [$ucmdo]"); sleep 2;
       }
-      my $touched = `touch ~/.pfp/hostchecked`; # indicate that --hostcheck done at least once.
+      my $touched = `touch ${parsync_dir}/hostchecked`; # indicate that --hostcheck done at least once.
     }
     
     # this next block wants to know if it's a rsyncd host.  
@@ -522,6 +521,14 @@ if ( !defined $NETIF || $NETIF eq "" ) {
     $rUSER = $rem_user;
     $rHOSTNAME = $rem_host;
     $defREMOTEPATH = $rem_fqpath;
+    
+    if ( $rHOSTNAME eq "filesystem" ) {
+      FATAL("parsyncfp2 does not work well across mounted filesystems 
+  (it's a NETWORK protocol), so I'm going to refuse to honor your request.
+  There are long explanations why this is the case on the intertubes, 
+  especially on the rsync discussion list.  If this is a popular request, I 
+  may work on it, but right now it's not.");
+    }
     
     if ( $rHOSTNAME ne "filesystem" ) {
 
@@ -642,8 +649,9 @@ if ( $SYSLOAD[0] < $MAXLOAD ) {
 }
 
 ##: == MASTER ONLY ==
-if ($REUSECHUNKS && $VERBOSE >= 2) {INFO(" Re-using previously created chunks.\n")}
-if ( !defined $SKIPFPART && !$REUSECHUNKS) {    # skip this if it's the multihost slave.
+if ($SKIPTO > -1 && $VERBOSE >= 2) { INFO(" Re-using previously created chunks.\n") }
+# print __LINE__, ": [$host] SKIPFPART = [$SKIPFPART] && SKIPTO = [$SKIPTO]\n";
+if ( !defined $SKIPFPART && $SKIPTO == -1) {    # skip this if it's the multihost slave or --reuse 
   if ( -d $parsync_dir ) {
     if ( $VERBOSE >= 1 ) {
       WARN("About to remove all the old cached chunk, log, 
@@ -654,6 +662,11 @@ if ( !defined $SKIPFPART && !$REUSECHUNKS) {    # skip this if it's the multihos
   Otherwise, hit [Enter] and I'll clear them."
       );
     }
+    if (defined $HOSTLIST) {      
+      INFO("The kill script to stop all parsyncfp2s and rsyncs on all the SEND and REC hosts is:
+  [$PFP2STOPSCRIPT].  
+  You may want to note or copy this path in case something goes wrong.\n");    
+    }  
     if    ($NOWAIT)        { sleep 1; }
     elsif ( $VERBOSE > 0 ) { pause(); }
     my $nbr_els_deleted = rmtree("${parsync_dir}");    # ,{safe => 1} # should probably do this recursively rmtree()?
@@ -846,14 +859,14 @@ touch $FP_ROOT_DIR/FPART_DONE";
   if ($DEBUG) { DEBUG( __LINE__,  "fpartcmd(3) = [$fpartcmd]\n" ) }
 } # now fpart sequence works fine.  Files are created in the 'hold' subdir, then mv'ed to the $FP_ROOT_DIR on close.
 
-# TODO resolve following with --reusechunks - both SKIPFPART and REUSECHUNKS want to skip FPART
-# but for different reasons.  $SKIPFPART implies that this is a SLAVE SENDHOST (and that the MASTER
-# has already started the fpart recursive descent, while $REUSECHUNKS says that the chunks have 
-# already been generated and we just want to re-use them.) Note that the fpart cmd has already been 
-# composed at this point.
+# TODO resolve following with --reusechunks - both $SKIPFPART and $SKIPTO want to skip FPART
+# but for different reasons.  $SKIPFPART implies that this is a SEND host (and that the MASTER
+# has already started the fpart recursive descent, while $SKIPTO says that the chunks have 
+# already been generated and we just want to re-use them, starting at $SKIPTO.) 
+# Note that the fpart cmd has already been composed at this point.
 
-if ( ($SKIPFPART || $REUSECHUNKS) && $VERBOSE >= 2 ) { # only actionable thing is if --reusechunks
-  if ($REUSECHUNKS) { INFO("Skipping fpart bc you've requested '--reusechunks'.\n"); }
+if ( ($SKIPFPART || $SKIPTO >= 0) && $VERBOSE >= 2 ) { # only actionable thing is if --reusechunks
+  if ($SKIPTO >= 0) { INFO("Skipping fpart bc you've requested '--reusechunks'.\n"); }
 } else {
   if ($DEBUG) { DEBUG( __LINE__,  "fpart cmd:\n[$fpartcmd]" );  }
   ##: Launch $fpartcmd
@@ -945,8 +958,8 @@ if ( $argv[$#argv] =~ /POD::/ ) {    # if this is the multihost version..
 }  # if ( $argv[$#argv] =~ /POD::/ )
 
 
-##: Write out pfpstop script
-# write out the pfpstop script which when exec'ed will kill off all parsyncfp2s and rsyncs on all the hosts.
+##: Write out pfp2stop script and copy Perl scripts to $parsync_dir
+# write out the pfp2stop script which when exec'ed will kill off all parsyncfp2s and rsyncs on all the hosts.
 if ( $MULTIHOST > 0 ) {
   my $hosts2hit = "";
   $nbrhosts = $#SENDHOSTS + 1;
@@ -959,8 +972,8 @@ if ( $MULTIHOST > 0 ) {
     my $hh = $a[0];                       # regardless, the [0] will be the bare hostname (probably)
     if ( $hosts2hit !~ $hh ) { $hosts2hit .= "${hh} "; }
   }
-  open( PSS, ">", glob("$PFPSTOPSCRIPT") )
-    or FATAL("Can't open PFPSTOP scriptfile [$PFPSTOPSCRIPT] for writing.");
+  open( PSS, ">", glob("$PFP2STOPSCRIPT") )
+    or FATAL("Can't open PFP2STOP scriptfile [$PFP2STOPSCRIPT] for writing.");
   print PSS
     qq(echo "WARNING: This will kill ALL YOUR rsync and parsyncfp2 processes on [$hosts2hit], 
     not just the ones started by parsyncfp2, so please be careful.
@@ -971,12 +984,23 @@ if ( $MULTIHOST > 0 ) {
       ssh \$host "kill -9 \\` ps ux | grep 'rsyn[c]\\|$BN_CALLING_PROGRAM' | awk '{print \\\$2}' \\` " ; 
 done
 );
-  close PSS; chmod 0700, "$PFPSTOPSCRIPT";
-  INFO(
-    "The shell script to stop all parsyncfp2s and rsyncs on all the SEND and REC hosts is:
-    [$PFPSTOPSCRIPT]\n"
-  );
+  close PSS; chmod 0700, "$PFP2STOPSCRIPT";
+  # INFO("The shell script to stop all parsyncfp2s and rsyncs on all the 
+  # SEND and REC hosts is:  [$PFP2STOPSCRIPT]\n");
+
+  ## : copy @UTILITIES to $parsync_dir to make sure all hosts are using the same programs
+  #print __LINE__, ": copying [@UTILITIES] to [$parsync_dir], using [$ENV{'PATH'}]\n";
+  for (my $dd = 0; $dd <= $#UTILITIES; $dd++) {
+    my $utpath = `which $UTILITIES[$dd] 2> /dev/null`; chomp $utpath;
+    if ($utpath ne "") { 
+      #print "[$UTILITIES[$dd]] -> [$parsync_dir]\n"; 
+      my $cmd = "cp -f $utpath $parsync_dir;";
+      #print "[$cmd]\n";
+      system($cmd);
+    } else { FATAL("Did not find [$UTILITIES[$dd]] on PATH; [@UTILITIES] need to be on the PATH.");}
+  }
 }
+
 ##: == SEND hosts only (SH/MH)
 ##: Compose RSYNC_CMD & send it to all the SEND hosts
 my @SH; # @SH is a duplicate of SENDHOSTS but without the user@ part, mostly for MHplotfile.sh below.
@@ -1008,7 +1032,7 @@ if ( $MULTIHOST > 0 ) {
     # this is what get sent to all the SEND hosts in quick succession
     # BUT (!!) ${HOME} is based on the issuing user's $HOME.. Should use '~'
     $REMOTECMD = qq(ssh $SENDHOSTS[$i] "$RPATHPFX \\
-    ~/.pfp/${BN_CALLING_PROGRAM}  --date=$DATE \\
+    ${parsync_dir}/${BN_CALLING_PROGRAM}  --date=$DATE \\
   --mstr_md5=$MD5SUM \\
   --nowait --verbose=${VERBOSE} --maxload=${MAXLOAD} --slowdown=${RTT_DELAY} \\
   --startdir=$ROOTDIR  --skipfpart --fpstart=$i --fpstride=$nbrhosts \\
@@ -1086,13 +1110,22 @@ my $sc = 0;
 # $CUR_FPI starts at 0 for unihost or $FPSTART for MH and needs to increment at the rate of $FPSTRIDE
 # UNLESS(!) we're reusing the chunks, in which case it ..starts out at the number of f.* files in the cache.
 
-$CUR_FPI = $FPSTART; 
+if ($SKIPTO > 0) { # if $SKIPTO is set, incr all the FPSTARTs
+  $CUR_FPI = $SKIPTO + $FPSTART; # maintain MH compatibility - $SKIPTO shifts all fpstarts that far
+} else { $CUR_FPI = $FPSTART; }  # so if SKIPTO = 700 & FPSTART was 2, now it's 702
+
 $NBR_FP_FLES = get_nbr_chunk_files( ${FP_ROOT_DIR} );
+
+if ($CUR_FPI > $NBR_FP_FLES ) {
+  FATAL("The '--skipto' value [$SKIPTO] is > the # of chunkfiles in the fpcache [$NBR_FP_FLES]. 
+  Please correct this problem and try again.  Check that the chunkfile dir you're using here 
+  [$FP_ROOT_DIR] is compatible with your '--altcache' setting [$ALTCACHE], if used.\n") ;
+}
 my $FPART_IS_DONE = 0;
 $DONE = 0;    # overall DONE indicator.  MHs end at different points so need a per-host indicator.
 my $start_secs = `date  +"%s"`; chomp $start_secs;
 my $day        = `date +"%F"`; chomp $day;
-if ($SKIPFPART || $REUSECHUNKS) { $FPART_PID = 111111111111111111; } 
+if ($SKIPFPART || $SKIPTO >= 0) { $FPART_PID = 111111111111111111; } 
 $MYFPRNG = `ps ux | grep fpar[t] | grep $FPART_PID |  wc -l`; chomp $MYFPRNG;
 $STILLRSYNCS = 1;
 
@@ -1132,7 +1165,7 @@ while ( ( ($CUR_FPI + $FPSTRIDE) < $NBR_FP_FLES || $MYFPRNG ) || $crr != 0) { #
   # print __LINE__, ": [$host] ($CUR_FPI + $FPSTRIDE) <= $NBR_FP_FLES || $MYFPRNG ) && $crr != 0)\n";
   my $start_s = time();
   
-  if (!$REUSECHUNKS) {
+  if ($SKIPTO == -1) { # $SKIPTO = -1 means DON'T reuse chunks
     if ( $CUR_FPI < $NP ) { # TODO: this has to be delayed to give fpart some time to generate the chunks.
       if ($VERBOSE > 2) {
         INFO( "
@@ -1487,7 +1520,7 @@ do this, you will probably run into the string limit for 'ls'.
           }
         } else {WARN("Chunk file [$CUR_FP_FLE] is not ready; skipping..");}
       } else {  
-        print __LINE__, ": rPIDs[$rPIDs], crr[$crr] \r";
+#        print __LINE__, ": rPIDs[$rPIDs], crr[$crr] \r";
       }
     }  # while ($n < $R2SU && !$DONE)
     
@@ -1516,7 +1549,7 @@ do this, you will probably run into the string limit for 'ls'.
   data) or an rsync has hung.  
   
   If the former, do nothing.  If you suspect the latter, You can allow 
-  this to continue or you can call the autogenerated kill script [$PFPSTOPSCRIPT] 
+  this to continue or you can call the autogenerated kill script [$PFP2STOPSCRIPT] 
   from another terminal and start over again, preferably with the 
   '--reusechunks' option to bypass the chunking process. 
   
@@ -1558,25 +1591,29 @@ my $f_fle_root = $FP_ROOT;
 
 if ( $VERBOSE >2 ) {INFO ("Checking rsync logs vs chunkfiles) FPSTART = [$FPSTART], CUR_FPI = [$CUR_FPI]\n");}
 # this loop runs thru all the rsync logs, checking that all of them have correct content
-while ($log_seq < $CUR_FPI){ # should this be '<' not '<='?
-  my $r_fle_wc; my $r_fle_as;
-  if (-e "${r_log_root}${log_seq}" ) {
-    $r_fle_wc = `sync && grep '\<f+++'  "${r_log_root}${log_seq}" | wc -l`; chomp $r_fle_wc; # 0 if no files transferred or if there's failure.
-    $r_fle_as = `grep 'total size' "${r_log_root}${log_seq}" | wc -l`; # should be 1 if remote = local
-  } else { WARN("Odd.  The file [${r_log_root}${log_seq}] was not written. 
-  Check the contents of the corresponding chunk file [${FP_ROOT_DIR}/f.${CUR_FPI}].") ; }
-  
-  if ($r_fle_wc == 0 && $r_fle_as == 0) {
-    INFO("rsync log [${r_log_root}${log_seq}] 
-    has 0 lines of transfer data, indicating failure or all remote files in that chunk are identical.\n");
-    $rsyncs_2_rpt[$r2ri++] = $log_seq;
-  }
-  $log_seq += $FPSTRIDE;
-}
 
+
+if ( $SKIPTO == 0 ){   # only do this if we're NOT using --skipto.  May revisit this if it becomes nec
+  while ($log_seq < $CUR_FPI){ # should this be '<' not '<='?
+    my $r_fle_wc; my $r_fle_as;
+
+    if (-e "${r_log_root}${log_seq}" ) {
+      $r_fle_wc = `sync && grep '\<f+++'  "${r_log_root}${log_seq}" | wc -l`; chomp $r_fle_wc; # 0 if no files transferred or if there's failure.
+      $r_fle_as = `grep 'total size' "${r_log_root}${log_seq}" | wc -l`; # should be 1 if remote = local
+    } else { WARN("Odd.  The file [${r_log_root}${log_seq}] was not written. 
+    Check the contents of the corresponding chunk file [${FP_ROOT_DIR}/f.${CUR_FPI}].") ; }
+    
+    if ($r_fle_wc == 0 && $r_fle_as == 0) {
+      INFO("rsync log [${r_log_root}${log_seq}] 
+      has 0 lines of transfer data, indicating failure or all remote files in that chunk are identical.\n");
+      $rsyncs_2_rpt[$r2ri++] = $log_seq;
+    }
+    $log_seq += $FPSTRIDE;
+  }
+}
 my $tt = 0; $r2ri--;
 my $resend = "";
-if (defined $rsyncs_2_rpt[0] && !$REUSECHUNKS) {
+if (defined $rsyncs_2_rpt[0] && $SKIPTO == -1) { # $SKIPTO = -1 -> DON'T REUSE chunks.
   WARN("The rsyncs using the following chunk files indicated no files transferred and no syncs, 
   indicating that either:
   a) all remote files in that chunk were identical to the local files (more likely) 
@@ -1617,60 +1654,75 @@ if ( $VERBOSE >= 2 ) {
   INFO("All rsyncs appear to have completed.  Please check the target 
   to make sure expected files are where they're supposed to be.\n");
 }
-##: Calc bytes of rsync logs and convert raw bytes to 'human'
-# remind user how much storage the cache takes and to clear the cache files
-# calculate bytes transferred from rsync logs ('$bytefiles')
-#$bytefiles .= "\*";    # to make it a glob
-$bytefiles = "${parsync_dir}/rsync-log-${DATE}_*";    # use this for a glob base
-$bytesxf = `grep 'bytes  total size' $bytefiles | scut -f=11 | stats --quiet --sum`;
-chomp $bytesxf;
 
-## this should be a function.##
-if ( $bytesxf < 1073741824 ) {                        # if < GB, present as MB
-  $rprtnbr = $bytesxf / 1048576;
-  $sfx     = "MB";                                    # for MB
-} elsif ( $bytesxf < 1.09951162778e+12 ) {            # if < TB, present as GB
-  $rprtnbr = $bytesxf / 1073741824;
-  $sfx     = "GB";                                    # for GB
-} else {                                              # present in TB
-  $rprtnbr = $bytesxf / 1.09951162778e+12;
-  $sfx     = "TB";                                    # for TB;
+if ( $SKIPTO < 0 ) { # only do this if it transferred enough bytes to matter. ie no --reuse
+  ##: Calc bytes of rsync logs and convert raw bytes to 'human'
+  # remind user how much storage the cache takes and to clear the cache files
+  # calculate bytes transferred from rsync logs ('$bytefiles')
+  #$bytefiles .= "\*";    # to make it a glob
+  $bytefiles = "${parsync_dir}/rsync-log-${DATE}_*";    # use this for a glob base
+  $bytesxf = `grep 'bytes  total size' $bytefiles | scut -f=11 | stats --quiet --sum`;
+  chomp $bytesxf;
+
+  ## this should be a function.##
+  if ( $bytesxf < 1073741824 ) {                        # if < GB, present as MB
+    $rprtnbr = $bytesxf / 1048576;
+    $sfx     = "MB";                                    # for MB
+  } elsif ( $bytesxf < 1.09951162778e+12 ) {            # if < TB, present as GB
+    $rprtnbr = $bytesxf / 1073741824;
+    $sfx     = "GB";                                    # for GB
+  } else {                                              # present in TB
+    $rprtnbr = $bytesxf / 1.09951162778e+12;
+    $sfx     = "TB";                                    # for TB;
+  }
+  $ALLBYTES = sprintf( "%9.5f %2s", $rprtnbr, $sfx );
+  ##: Print reminders
+  my $du_cache = `du -sh $parsync_dir`;
+  chomp $du_cache;
+  my $tt = $CUR_FPI - $FPSTRIDE;                        # compensate for the autoincr above.
+  $logfile = "${parsync_dir}/rsync-log-${DATE}_${tt}";
+
+  if ( $VERBOSE > 2 && $DISPOSE =~ /l/ ) {
+    INFO(
+      "(Reminder) If you suspect errors, check the rsync logs.
+  [${parsync_dir}/rsync-log-${DATE}_*]
+
+    and the fpart log:
+  [$FPART_LOGFILE]
+
+    Your fpcache files were written in 
+  [${FP_ROOT_DIR}] and take up [$du_cache].
+    You rsync'ed about [$bytesxf bytes = $ALLBYTES] via all [$NP] rsyncs on this host.
+    
+    If you used the multihost mode, the whole pfp2 log is here: 
+  [${parsync_dir}/pfp-log-${DATE}]
+    (mostly text but identifies as 'binary' due to text coloration strings):
+    If you used the singlehost mode and want to log the output, capture it with 'script'.
+    
+    The host-specific command used for this parsyncfp2 run (in case the host 
+    dies midway or for debugging purposes) was:
+  [$0 @argv]\n\n"
+    );
+  }
 }
-$ALLBYTES = sprintf( "%9.5f %2s", $rprtnbr, $sfx );
-##: Print reminders
-my $du_cache = `du -sh $parsync_dir`;
-chomp $du_cache;
-my $tt = $CUR_FPI - $FPSTRIDE;                        # compensate for the autoincr above.
-$logfile = "${parsync_dir}/rsync-log-${DATE}_${tt}";
-if ( $VERBOSE > 2 && $DISPOSE =~ /l/ ) {
-  INFO(
-    "(Reminder) If you suspect errors, check the rsync logs.
-[${parsync_dir}/rsync-log-${DATE}_*]
 
-  and the fpart log:
-[$FPART_LOGFILE]
-
-  Your fpcache files were written in 
-[${FP_ROOT_DIR}] and take up [$du_cache].
-  You rsync'ed about [$bytesxf bytes = $ALLBYTES] via all [$NP] rsyncs on this host.
-  
-  If you used the multihost mode, the whole pfp2 log is here: 
-[${parsync_dir}/pfp-log-${DATE}]
-  (mostly text but identifies as 'binary' due to text coloration strings):
-  If you used the singlehost mode and want to log the output, capture it with 'script'.
-  
-  The host-specific command used for this parsyncfp2 run (in case the host 
-  dies midway or for debugging purposes) was:
-[$0 @argv]\n\n"
-  );
-}
 
 # POST PROCESSING pfp to clean up details.
 ##: Exit cleanup: email
+
 if ( defined $EMAIL ) {
-  INFO("Mailing completion note & log to [$EMAIL]\n");
-  system("cat $FPART_LOGFILE | mail -s \"$DATE: parsyncfp on host [$host] completed\" $EMAIL");
+  INFO("Mailing completion note to [$EMAIL]\n");
+  print __LINE__, ": [$host] parsync_dir = [${parsync_dir}]\n";
+  my $email_cmd = "echo \"Check the pfp2 logs in [${parsync_dir}] 
+  for the results of the command: 
+  
+[$0 @argv]
+  
+\" | mail -s \"$DATE: parsyncfp2 on host [$host] completed\" $EMAIL";
+  print __LINE__, ": [$host] $email_cmd\n";
+  system("$email_cmd");
 }
+
 if ($DEBUG) { DEBUG( __LINE__,  "DISPOSE=[$DISPOSE]\n" ); }
 ##: Dispose of cache
 # and based on --disposal, (=c(ompress), =d(elete) =l(eave untouched)  all the chunk files.
@@ -1709,15 +1761,15 @@ if ( $VERBOSE >= 2 ) {
 #print __LINE__, ": rPIDs = [$rPIDs], crr = [$crr]\n";
 
 ##: Left over orphan warning
-sleep 3; # to see if this is just the matching rsync servers dying off 
-my $orphans = `ps ux | grep rsyn[c] | grep -v daemon | wc -l`; chomp $orphans;
+sleep 1; # to see if this is just the matching rsync servers dying off 
+my $orphans = `ps ux | grep rsyn[c] | grep -v daemon | grep -v parsync | wc -l`; chomp $orphans;
+
 if ($orphans != 0) {
-  WARN("There are [$orphans] rsyncs still running on [$host].  
-  These may be tardy rsyncs shutting down slowly or may be unrelated 
-  to pfp2 - please check carefully - but if you're sure that they're 
-  hanging orphans, you can kill them off with the autogenerated 
-  [$PFPSTOPSCRIPT] script which will kill all user-owned rsync and 
-  pfp2 processes running on all the hosts involved in this run.\n")
+  INFO("There are [$orphans] rsyncs still running on [$host].  
+  These may be unrelated to pfp2 - check carefully - but if you're sure 
+  that they're hanging orphans, you can kill them off with the 
+  autogenerated [$PFP2STOPSCRIPT] script which will kill all user-owned 
+  rsync and pfp2 processes running on all the hosts involved in this run.\n")
 }
 print "\n\nThanks for using parsyncfp. Tell me how to make it better.
                           <hjmangalam\@gmail.com>\n\n";
@@ -2038,7 +2090,7 @@ sub parse_rsync_target ( $LOCALUSER, $TARGET, $ALTCACHE, $recv_hoststring){
 #   - if master && firstrun (!-e ~/.parsyncfp) checks for installed apps, etc
 #      - check distro  - /etc/os-release
 
-#   - if SEND host && firstrun (!-e ~/.pfp)
+#   - if SEND host && firstrun (!-e ${parsync_dir})
 #     - based on distro, print packages you need to install
 #         - CENTOS - epel-release, fpart, wireless-tools(iwconfig), infiniband-diags (perfquery),
 #             perl-Statistics-Descriptive, perl-Env
@@ -2058,7 +2110,7 @@ sub parse_rsync_target ( $LOCALUSER, $TARGET, $ALTCACHE, $recv_hoststring){
 
 #   - checks for running rsyncs - should be done each time anyway.
 #       for master, SEND, and REC hosts (there will alsways be a MASTER/SEND and a REC; there may
-#       be multiple SLAVE SEND AND REC hosts.  Detect which condition and run hostcheck on all of them.
+#       be multiple SEND AND REC hosts.  Detect which condition and run hostcheck on all of them.
 #       may have to call as hostcheck(SINGLEMASTER|| MULTIMASTER || SEND || RSYNC (rec) || RSYNCD (rec)),
 #       always have to run MASTER, then detemine what kind of host it is via parsing the -hosts option
 #       or the TARGET.  So checkhosts() can be inserted anywhere it's needed.
@@ -2098,18 +2150,21 @@ sub checkhost ( "NODETYPE", $HOST2CHECK, $RSYNCMODULE, $ALTCACHE, $VERBOSE, $MAX
   my $DBC        = 0;
   my $rtt        =0;
   my @L; my $N;
-  my $optional = "Optionally udr (scut & stats provided with parsyncfp).  
+  my $optional = "Optionally udr (scut & stats provided with parsyncfp2).  
     See '--help' or HTML manual for availability.\n";
 
-  if ($VERBOSE >= 2) { INFO("HostChecking [$host2check] as [$ntype] host.
-  May be be a delay  while waiting for 5 pings (network check). \n");}
+  if ($VERBOSE >= 2) { 
+    my $rec_chk = "";
+    if ($ntype =~ "RSYNC") { $rec_chk = "Possible delay waiting for 5 pings.";}
+    INFO("HostChecking [$host2check] as [$ntype] host. $rec_chk\n");
+  }
 
   if ( $ntype =~ "MASTER|SEND" ) {
     if ( $ntype =~ "SINGLE" ) {
 
       # detect if it's a firstrun
-      if ( -d "$HOME/.pfp" ) {    # probably NOT a firstrun
-                                  #print "not a first run, $HOME/.pfp exists\n";
+      if ( -d "$altcache" ) {    # probably NOT a firstrun
+                                  #print "not a first run, $altcache exists\n";
       } else {
         first_run_required_utils();
       }
@@ -2120,7 +2175,7 @@ sub checkhost ( "NODETYPE", $HOST2CHECK, $RSYNCMODULE, $ALTCACHE, $VERBOSE, $MAX
         shared directory [$altcache] doesn't exist."
         );
       }
-      if ( !-e "~/.parsyncfp" ) {      # probably a firstrun if the ~/.parsyncfp doesn't exist.
+      if ( !-e "$altcache" ) {      # probably a firstrun if the ~/.parsyncfp doesn't exist.
         first_run_required_utils();
       }
     } elsif ( $ntype eq "SEND" ) {
@@ -2152,16 +2207,16 @@ sub checkhost ( "NODETYPE", $HOST2CHECK, $RSYNCMODULE, $ALTCACHE, $VERBOSE, $MAX
 
     # and finally the rsync check for leftovers on all hosts (from SINGLE- or MULTIMASTER)
     my $checkcmd =
-qq(ssh $host2check "ps ux | grep rsyn[c]| grep -v '${CALLING_PROGRAM}\\|daemon' | wc -l; mkdir -p ~/.pfp" 2> /dev/null)
+qq(ssh $host2check "ps ux | grep rsyn[c]| grep -v '${CALLING_PROGRAM}\\|daemon' | wc -l; mkdir -p ${parsync_dir}" 2> /dev/null)
       ;                                       # should return integer
     my $checkout = `$checkcmd`; chomp $checkout;
     if ( $checkout > 0 ) {
       WARN("Host [$host2check] has [$checkout] rsyncs running already as 
         the login user.  Possible conflicts.
         If you're sure they're related to failed pfp runs, you can kill off all the rsyncs
-        and pfp scripts with [$PFPSTOPSCRIPT]\n");
+        and pfp scripts with [$PFP2STOPSCRIPT]\n");
     } else {
-      if ( $VERBOSE >= 2 ) { INFO("[$host2check] is free of competing rsyncs.\n\n") }
+      if ( $VERBOSE >= 2 ) { INFO("[$host2check] is free of competing rsyncs.\n") }
     }
     $checkcmd =
       qq(ssh $host2check 'if [[ -e .ssh/config ]]; then grep Host ~/.ssh/config; fi' 2> /dev/null);
@@ -2216,7 +2271,7 @@ sub first_run_required_utils () {
   # if IF =~^ib -> ibstat, perfquery
   # all should be able to use udr (but that's only needed if you try that option.)
   my $optional = "Optionally 'udr' (get & compile from <https://github.com/martinetd/UDR>)
-    'scut' & 'stats' are typically bundled provided with parsyncfp).  
+    'scut' & 'stats' are typically bundled provided with parsyncfp2).  
     See '--help' or HTML manual for availability.\n";
 
   # the initial values are the REQUIRED utils
@@ -2252,7 +2307,7 @@ sub first_run_required_utils () {
       WARN(
         "The following recommended utilities for your distro were not found:
     [@warn].
-    If the utilities aren't on your PATH and parsyncfp hits a requirement, it may give faulty
+    If the utilities aren't on your PATH and parsyncfp2 hits a requirement, it may give faulty
     output or crash."
       );
     }
@@ -2691,7 +2746,7 @@ sub usage {
 $PARSYNCVER
 The only native rsync options that parsyncfp2 (pfp) uses are '-a -s (archive, 
 protect-args).  If you need more, then it's up to you to provide them ALL 
-via '--rsyncopts'. pfp2 checks to see if the current system load is too 
+via '--ro'. pfp2 checks to see if the current system load is too 
 heavy and tries to throttle the rsyncs during the run by monitoring and 
 suspending / continuing them as needed. 
 
@@ -2762,36 +2817,53 @@ or with quotes: [file\\ with\\ spaces] or ['file with spaces']
 
 --NP|np [i] (sqrt(#CPUs)) ..............  number of rsync processes to start
        optimal NP depends on many vars.   Try the default and incr as needed
---altcache|ac (~/.parsyncfp) ..... alternative cache dir for placing it on a
-                another FS or for running multiple parsyncfp2s simultaneously
+--altcache|ac [/path/to/dir] ..... alternative cache dir for placing it on a
+               another FS or for running multiple parsyncfp2s simultaneously
 --startdir|sd [s] (`pwd`)  ..................  the directory it starts at(*)
 --maxbw [i] (unlimited) ...........  in KB/s max bandwidth to use (--bwlimit
        passthru to rsync).  maxbw is the total BW to be used, NOT per rsync.
---maxload|ml [f] (NP+2)  ..........  max system load - if loadavg > maxload,
-                                            an rsync proc will sleep for 10s
+--maxload|ml [f] (NP*2)  ...........  max system load - if loadavg > maxload
+                        an rsync proc will be suspended for the checkperiod,
+                       then checked again. If the loadavg is still too high, 
+                      another rsync process will be suspended, until no more
+                     running rsyncs are left.  If the loadavg goes below the
+                             maxload,  an rsync process will be unsuspended.
+                              This is independent on each of the Send hosts.
 --chunksize|cs [s] (10G) .... aggregate size of files allocated to one rsync
                       process.  Can specify in 'human' terms [100M, 50K, 1T]
-                        as well as integer bytes. pfp will warn once when/if
+                       as well as integer bytes. pfp2 will warn once when/if
                      you exceed the WARN # of chunkfiles [$WARN_FPART_FILES] and abort if
                      you exceed the FATAL # of chunkfiles [$MAX_FPART_FILES]. You CAN force 
                         it to use very high numbers of chunkfiles by setting 
-                       the number negative (--chunkfile -50GB), but this can
-                       be risky.
+                       the number negative (--chunksize -50KB), but this can
+                be risky.  You typically want between 100 - 1000 chunkfiles.
+                  (enough so that fpart can collect the starter set quickly,
+                         but not so many that doing file ops on them will be 
+              excessive - they have to be counted a few times at each cycle)
 --interface|I [s]  ......  network interface to monitor (not use; see above)
-                                              Only SENT bytes are displayed.
---rsyncopts|ro [s]  ...  options passed to rsync as quoted string (CAREFUL!)
+                         Only SENT bytes are displayed and this is the total
+                            number of bytes sent thru the interface, not the 
+                                    number sent ONLY by pfp2 (another ToDo).
+--ro [s]  .............  options passed to rsync as quoted string (CAREFUL!)
          this opt triggers a pause before executing to verify the command(+)
 --checkperiod|cp [i] (3) ........ sets the period in seconds between updates
---reusechunks ......... re-use the fpart chunks that were calculated for the
-                        previous run, using the same chunk size as previous.
-                       Useful for restarting a run that was mistakenly ended
-                        without waiting for fpart to recalculate the chunks.
+                This is a best effort attempt.  If chunksize is set so small
+         so 1000s of chunkfiles are created, file IO may lengthen this time.
+--reusechunks [i] (1) ........... re-use the chunking data collected for the
+                         previous run, using the same chunk size. Useful for
+                              restarting a run that was mistakenly ended w/o
+                                waiting for fpart to recalculate the chunks.
+               The integer argument is the chunk to start at, so rather than 
+               running thru all the (possibly 100s of) chunks, you can start 
+                      at the one closest to where the interruption occurred.
 --verbose|v [0-3] (2) ....sets chattiness. 3=debug; 2=normal; 1=less; 0=none
                              This only affects verbosity post-start; warning
                                      & error messages will still be printed.
 --dispose|d [s] (l) .... what to do with the cache files. (l)eave untouched,
                                           (c)ompress to a tarball, (d)elete.
---email [s]  .....................  email address to send completion message
+--email [s] (none)................  email address to send completion message
+                           email address should not need escaping or quoting
+                       but should also work with them as well (joe\\\@go.com).
 --nowait  .............  for scripting, sleep for a few s instead of pausing
 --slowdown [f] (0.5) .... introduces delays between ssh-mediated commands if
                                the RTT is too long.  It's increased in steps
@@ -2814,9 +2886,9 @@ comprehensive description of how this works is described in rsyncd.conf(5)
 These can also have the same or different endpoints.  
 
 Both types can be mixed in the same hosts string.  The multihost version 
-requires that the initiator and all the send hosts have access to a common 
-filesystem for both data and configuration info.
-
+requires that the initiator and all the send hosts (which can include the 
+initiator) have access to a common filesystem for both data and configuration info.
+ 
 --hosts [s] ........... specify the SEND and REC hosts, optionally supplying
                     REC hosts with individual alternate paths to store data.
                     If you specify /different/ REC paths, the SEND data will 
@@ -2845,22 +2917,20 @@ filesystem for both data and configuration info.
                 If they do, the number of them is reported. Those rsyncs may 
                  be valid and independent of pfp but it may be evidence of a 
                        failed pfp which may interfere with a new pfp launch.
-                         In order to prevent regex mistakes, I rec using the 
-                              '--ro' flag rather than the full '--rsyncopts'
                        This option also pushes the required utilities to the 
                             SEND hosts to make sure that they have the exe's
                                    necessary to run with full functionality.
 --commondir [s] ............ the shared, common dir in which all chunk files 
                         and rsync logs will stored.  Similar to '--altcache'
                                      but MUST be readable by all SEND hosts.
---rpath [s] .............. the remote PATH prefix on the SLAVES to check for 
+--rpath [s] .............e remote PATH prefix on the SEND hosts to check for 
                          the bits needed to run this. Prefixed to the remote 
                              ssh cmd as 'export PATH=<rpath string>:\$PATH;' 
                          The rpath string can contain as many paths as you'd 
                           like, separated by ':',tho vars have to be escaped
                                                --rpath="~/bin:\\\$HOME/pfp/bin"
-                   (default is ~/bin:~/.pfp, and ':\$PATH is also appended so
-                            --rpath="~/bin:\\\$HOME/pfp/bin"
+                   (default is ~/bin:${parsync_dir}, and ':\$PATH is also appended so
+                            --rpath="~/bin:\\\$HOME/pfp2/bin"
                                         is transmitted as:
                             --rpath="~/bin:\\\$HOME/pfp/bin:\\\$PATH"
                         (This option may be removed as the --hostcheck option
@@ -2883,7 +2953,7 @@ rsync targets so a valid hostlist string could be:
 "s1=r1:/path1,s2=r2::mod2,s3=r3:/path3,s4=r4::mod4,s5=r5"
 However, unless the rsyncd server is open (without authorization) you must 
 export your RSYNC_PASSWORD in the SEND host's ~/.bashrc for 
-this to work, or use '--rsyncopts='--password-file=FILE' to point to a 
+this to work, or use '--ro='--password-file=FILE' to point to a 
 permission-protected file containing the appropriate credentials.
 Otherwise, the responding rsyncd will query for your rsync user password (not
 your login password).  This is defined in the rsyncd host's 
@@ -2896,8 +2966,8 @@ with the SEND hostname so you can decipher which SEND host is saying what.
 
 However, unlike the single-host version, killing or suspending the originating 
 program will have no effect on the SEND hosts; the remote rsyncs will have to be 
-killed manually.  This is made easier with a killer script that is generated at 
-every invocation of the MH version, called '~/.pfp/pfpstop' and will kill off ALL 
+killed manually.  This is made easier with a 'kill script' that is generated at 
+every invocation of the MH version, called '\\${parsync_dir}/pfp2stop' and will kill off ALL 
 YOUR rsync and parsyncfp2 instances running (including ones that were not part of the 
 the originating parsyncfp2, so be careful).
 
@@ -2968,14 +3038,14 @@ and you wanted to transfer the dirs that begin with 'dir', but not the file
 If you wanted to include that file, you could use 'dir\*'. The '\' defers the 
 glob until it's evaluated in the program.
 
-(+) the '--rsyncopts' string can pass any rsync option to all the rsyncs
+(+) the '--ro' string can pass any rsync option to all the rsyncs
 that will be started.  This allows options like '-z' (compression) or
 '--exclude-from'  to filter out unwanted files. I've refused to allow 
 any of rsync's 'delete' options.  See below.
 
 == Hints & Workarounds
 
-IMPORTANT: rsync '--delete' options will not work with '--rsyncopts' bc the 
+IMPORTANT: rsync '--delete' options will not work with '--ro' bc the 
 multiple rsyncs that parsyncfp2 launches are independent and therefore 
 don't know about each other (and so cannot exchange info about what should
 be deleted or not.  Use a final, separate 'rsync --delete' to clean up the 
@@ -2983,12 +3053,12 @@ transfer if that's your need.
 
 Also, rsync options related to additional output has been disallowed to avoid 
 confusing pfp's IO handling.  -v/-verbose, --version, -h/--help are 
-caught, and pfp will die with an error.  Most of the info desired from these
+caught, and pfp2 will die with an error.  Most of the info desired from these
 are captured in the rsync-logfile files in the ~/.parsyncfp dir.
 
 A recent addition to pfp2 is a check for number of chunkfiles, resulting in 
 a warning if the chunkfile number gets too large.  This is usually due to 
-pointing parsyncfp at a huge filesystem, with millions of files, with a 
+pointing pfp2 at a huge filesystem, with millions of files, with a 
 chunksize that's too small.  The easiest solution is to increase the chunksize
 ('--chunksize=100G) which will result in a smaller number of chunk files to 
 process  Note the text above for '--chunksize'.
@@ -3006,9 +3076,10 @@ silencing the STDERR doesn't hurt anything.
     Install via repository.
 === fpart - Sort and pack files into partitions. 
     Install from: https://github.com/martymac/fpart; now in the ubuntu Repos.
-=== scut - more intelligent cut. 
-    Install from: https://github.com/hjmangalam/scut
-=== stats - calculate descriptive stats from STDIN (part of the scut package above)
+=== scut - more intelligent cut. Included in the pfp2 github or install from: 
+    https://github.com/hjmangalam/scut
+=== stats - calculate descriptive stats from STDIN. Included in the pfp2 
+    github or install from: https://github.com/hjmangalam/scut
 
 == Recommended Utilities
 
@@ -3045,7 +3116,7 @@ where
 
 % parsyncfp2   --checkperiod 6  --NP 3 \\
 --interface eth0  --chunksize=87682352 \\
---rsyncopts="--exclude='[abc]*'"  nacs/fabio   \\
+--ro="--exclude='[abc]*'"  nacs/fabio   \\
 hjm\@bridgit:~/backups
 
 The above command shows several options used correctly:
@@ -3053,7 +3124,7 @@ The above command shows several options used correctly:
 --chunksize=87682352 - shows that the chunksize option can be used with explicit
 integers as well as the human specifiers (TGMK).
 
---rsyncopts="--exclude='[abc]*'" - shows the correct form for excluding files
+--ro="--exclude='[abc]*'" - shows the correct form for excluding files
 based on regexes (note the quoting to protect the regex as it gets passed thru)
 
 nacs/fabio - shows that you can specify subdirs as well as top-level dirs (as
@@ -3068,7 +3139,7 @@ linux-4.8.4 bridgit:~/test
 The above command shows:
 - short version of several options (-v for --verbose, --cp for checkperiod, etc)
 - shows use of --altcache (--ac pfpcache1), writing to relative dir pfpcache1
-- again shows use of --rsyncopts (--ro '-az') indicating 'archive' & compression'.
+- again shows use of --ro (--ro '-az') indicating 'archive' & compression'.
 - includes '--nowait' to allow unattended scripting of parsyncfp
 
                             == Good example 4 ==
@@ -3087,7 +3158,7 @@ parsyncfp2 --verbose=2 --ro='-aslz' \\
 --hosts="bigben=bridgit.ure.edu:/d1/in, \\
           pooki=bridgit.ure.edu:/d2/in, \\
         stunted=bridgit.ure.edu:/d3/in" \\
---hostcheck --rsyncopts="-aslz"  --NP 4 --chunk 15G --check 5 --dispo=l \\
+--hostcheck --NP 4 --chunk 15G --check 5 --dispo=l \\
 --interface=wlp3s0 --commondir=/home/hjm/pfp --startdir /home/hjm/pfp \\
 dir1 dir2 dir3 dir4  POD::/
 
@@ -3095,12 +3166,33 @@ The above multihost command shows 3 SEND hosts (bigben, pooki, stunted) all send
 data to the REC host bridgit.ure.edu altho the data is being split among 3
 filesystems.  
 
-It shows the preferred way of defining the rsyncopts with '--ro=-aslz' and the 
+It shows the preferred way of defining the ro with '--ro=-aslz' and the 
 '--dispo=l' option requests that the cachefiles be left alone.  In Multihost mode
 the chunk files MUST be left, since all the independent SEND hosts need to reference
 them until they're finished.
 The 'POD::/' terminal element is the (required) default path for any undefined 
 REC hosts.  Since all of the REC hosts paths are defined, they aren't affected.
+
+=== Good example 5 (Multihost)
+
+parsyncfp2  --hostcheck --NP=16 --chunk=50G --check 5  \\
+--hosts="bigben=tux\@moon1, \\
+          pooki=tux\@moon2, \\
+        stunted=tux\@moon3  \\
+         cooper=gibson\@moon4::circadian" \\
+--maxload=20 --ro='-slaz' \\
+--commondir=/home/pfp --startdir /home/pfp/incoming \\
+dir1 dir2 dir3 dir4  POD::/d1/incoming
+
+The above multihost command shows 4 SEND hosts (bigben, pooki, stunted, cooper) each sending 
+16 stream of data to the 4 clustered REC hosts (moon1 - moon4) with the REC data path being provided by the POD default path '/d1/incoming', except for moon4 which is using a rsyncd module as the REC endpoint, with the rsyncd ID 'gibson' as the authorized user (this requires the rsyncd password to be part of the ENV on cooper:
+ie the ~/.bashrc must contain 'RSYNC_PASSWORD=whateveritis').  
+
+Thus there are 64 (4x16) rsync streams pushing data to the REC cluster.  This assumes the filesystem on the moon cluster can write that fast and that the intermediate network can provide the bandwidth. It also assumes that the rsync compression requested by the '--ro (--ro='-slaz')
+arguments can stay below the individual 1m loadavg of 20 requested  by '--maxload=20'.  If it doesn't, the SEND hosts will start to suspend rsyncs until the loadavg goes below 20.
+The '--commondir' and '--startdir' paths define the shared storage and where in it the data to be sent is stored.  '--commondir' and '--startdir' do not have to be identical, but they do have to be R/W available 
+to all the SEND hosts.
+The '--hostcheck' command makes sure that required utilities are available, that the parsyncfp2 program is identical, and also checks the latency between the SEND and REC hosts.
 
 === ERROR example 1
 
