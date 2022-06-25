@@ -75,8 +75,12 @@ For expanded description of operation and commandline options please see the HTM
 
 ## Changes
 
+### 2.44 
+- added some regex to prevent the kill script from killing the remote rsync daemon in case you're using it as root. Very much NOT recommended, but some ppl require this, apparently.
+- fixed the bug that caused 2 dirs for each send host to be created if you specified them with something other than the correct short host name ('hostname -s'). ie: if you spec'ed a send host as '128.200.43.11' it would create a dir named that, and later, the 'hostname -s' of the same machine.  Cost ~.5s per host, but fixes it simply.
+
 ### 2.43
-- removed the option of calling it '--rsyncopts', now just --ro to prevent the regex mistakes as in the past.
+- removed the option of calling it '--rsyncopts', now just --ro to prevent some regex filtering problems in the past.
 
 ### 2.42
 - add --skipto  - esp useful with --reuse to skip to that chunk without wading thru all the intervening fpart chunks and rsyncs.  Could save minutes to 10s of min in restarting a huge transfer, especially if the network has significant delay and the --slowdown delay is significant. 
@@ -85,7 +89,7 @@ so --reuse and skipto are both required and just set the CUR_FPI to that number.
 - collapse --reuse and --skipto into --reusechunk:i  makes more sense.
 
 ### 2.41
-- debugged weird ssh/RTT errors, introduced --slowdown and internal routine to ping to REC hosts to figure out how slow the connection was and compensate with some delays in starting new ssh connections.  Seems to have addressed teh problem.
+- debugged weird ssh/RTT errors, introduced --slowdown and internal routine to ping to REC hosts to figure out how slow the connection was and compensate with some delays in starting new ssh connections.  Seems to have addressed the problem.
 
 ### 2.40 
 - Check generation of MHplotfile.sh - it doesn't pick up the user@host  designation and munges the 2 together so it drops out any data that has a user@host send or rec bc it's not parsing the data correctly (I think).

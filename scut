@@ -73,7 +73,7 @@ eval {require Statistics::Descriptive};
 if ($@) { # touch a junkfile so we don't keep repeating this error
   if (! -e ".scutjunk") { 
     my $e = `echo "this file can be deleted" > ~/.scutjunk`;
-    print STDERR "(scut): [Statistics::Descriptive] not found; continuing.\n" 
+    print STDERR "(scut): [Statistics::Descriptive] not found, but continuing.\n" 
   }
 }
 use Env qw(PATH HOME);
@@ -351,7 +351,7 @@ if (!defined $f2) { # if there's no File2, then slice the requested columns out 
 				}
 				#print "newcols = [$newcols]\n";
 				if ($stats == 1 && $newcols !~ /[a-df-zA-DF-Z]/){
-					eval 'use Statistics::Descriptive'; die "[Statistics::Descriptive] not found\n" if $@;
+					eval 'use Statistics::Descriptive'; die "Can't do this without [Statistics::Descriptive]\n" if $@;
 					# split $newcols
 					@Ls = split /$od/, $newcols;
 					$stat = Statistics::Descriptive::Full->new();

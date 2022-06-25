@@ -10,14 +10,6 @@
 
 # ### this version contains the consolidated startup and main loop.  
 
-# TODO: (LOSF fork only) modify for allowing the executable to be renamed and stop.
-# the losf stuff in MH mode (in pfp2c-losf) will require a better approach.  
-# The current pfp2c-losf works fine in SH mode, 
-# but falls apart in MH mode bc the g2g_*** stuff won't transfer across hosts.  It would require a 
-# file-based approach. So instead of using the g2g_-based trackers, return to using f.# but processed as 
-# the g.# and s.# files.  They're distinguished not by file name but by wc of the file & the contents 
-# (1 file, ends in tar.lz4.pfp).  But, instead of being able to do the lookahead via filenames, going 
-# to have to do them via actually reading, evaluating the f.# file.
 
 ##: == COMMON TO MASTER & SEND hosts ==
 ##: Lib Requirements
@@ -32,6 +24,8 @@ use Term::ANSIColor;    # for alarms
 # use IPC::Run3; # testing for passing STDIN to fpart - not working yet
 
 ##: Dev/github/update gunk
+# fpart update from github:
+#   'git clone https://github.com/martymac/fpart.git; 'cd fpart; aclocal; automake --add-missing; autoconf; ./configure; make -j4'
 #  perltidy cmd to format uniformly: perltidy -ce -i=2 -l=100 parsyncfp
 # copy to all the local hosts for local testing
 # fn="/home/hjm/bin/parsyncfp"; scp $fn bridgit:~/bin;
@@ -41,8 +35,8 @@ use Term::ANSIColor;    # for alarms
 # rsync -av ~/bin/* bridgit:~/bin; ssh bridgit 'rsync -av ~/bin/* hmangalam@fibre:~/bin'; ssh bridgit 'rsync -av ~/bin/* hmangalam@fibre-compute:~/bin';
 
 ##: ITER notes
-# cd ~/bin; scp parsyncfp2 scut stats bridgit:~/iter; cd - ;  # from stunted
-# cd ~/new; scp hjm@bridgit.mmg.uci.edu:~/iter/* . ; cd - ;# from iter login host
+# cd ~/bin; scp parsyncfp2.244  bridgit:~/iter; cd - ;  # from stunted, also scut stats
+# cd ~/bridgit; scp hjm@bridgit.mmg.uci.edu:~/iter/* . ; cd - ;# from iter login host
 
 # for centos: need 'yum install perl-Env.noarch  perl-Statistics-Descriptive wireless-tools'
 
@@ -77,8 +71,8 @@ use vars qw($allPIDs $ALL_SYS_RSYNC_PIDS $ch $CHECKPERIOD $cmd
 my @argv = @ARGV;
 $FPSTART = 0;              # trivial check to print only one header
 $PARSYNCVER  = << "VERSION";
-parsyncfp version 2.43 (Cooper)
-Feb 24, 2022
+parsyncfp version 2.44 (Sarty Rd)
+June 24, 2022
 by Harry Mangalam <hjmangalam\@gmail.com>
 
 parsyncfp is a Perl script that wraps the near-miraculous Tridgell/
@@ -626,7 +620,7 @@ if ( $CHECKHOST && $MULTIHOST == 0 && !defined $SKIPFPART && $rHOSTNAME ne "FILE
   # let's see how this works out.
   if ( $RTT < 1 ) { $RTT_DELAY = 0.5; }
   else            { $RTT_DELAY = $RTT/7; } # 10 = 1, 20 = 2, etc
-  print __LINE__, ": RTT = [$RTT], RTT_DELAY = [$RTT_DELAY]\n";
+  #print __LINE__, ": RTT = [$RTT], RTT_DELAY = [$RTT_DELAY]\n";
 }
 
 ##: Check loadavg too high
@@ -975,21 +969,20 @@ if ( $MULTIHOST > 0 ) {
   open( PSS, ">", glob("$PFP2STOPSCRIPT") )
     or FATAL("Can't open PFP2STOP scriptfile [$PFP2STOPSCRIPT] for writing.");
   print PSS
-    qq(echo "WARNING: This will kill ALL YOUR rsync and parsyncfp2 processes on [$hosts2hit], 
+    qq(echo "WARNING: This will kill ALL YOUR rsync and parsyncfp2 processes on
+    [$hosts2hit], 
     not just the ones started by parsyncfp2, so please be careful.
+    
     Hit 'Enter' to continue, Cntrl+C to abort";
     read ee
     for host in $hosts2hit; do 
       echo [ processing \$host ] ; 
-      ssh \$host "kill -9 \\` ps ux | grep 'rsyn[c]\\|$BN_CALLING_PROGRAM' | awk '{print \\\$2}' \\` " ; 
+      ssh \$host "kill -9 \\` ps ux | grep -v daemon | grep 'rsyn[c]\\|$BN_CALLING_PROGRAM' | awk '{print \\\$2}' \\` " ; 
 done
 );
   close PSS; chmod 0700, "$PFP2STOPSCRIPT";
-  # INFO("The shell script to stop all parsyncfp2s and rsyncs on all the 
-  # SEND and REC hosts is:  [$PFP2STOPSCRIPT]\n");
 
-  ## : copy @UTILITIES to $parsync_dir to make sure all hosts are using the same programs
-  #print __LINE__, ": copying [@UTILITIES] to [$parsync_dir], using [$ENV{'PATH'}]\n";
+  ##: copy @UTILITIES to $parsync_dir to make sure all hosts are using the same programs
   for (my $dd = 0; $dd <= $#UTILITIES; $dd++) {
     my $utpath = `which $UTILITIES[$dd] 2> /dev/null`; chomp $utpath;
     if ($utpath ne "") { 
@@ -1014,17 +1007,26 @@ if ( $MULTIHOST > 0 ) {
      # add the default path if there's not one spec'ed
     my @sh; 
     if ( $RECHOSTS[$i] !~ /:/ ) { $RECHOSTS[$i] .= ':' . $defREMOTEPATH; }
+    
+    # resolve diffs between FQDNs, dotted quads, shorthostnames, etc. collapse all to short hostnames by
+    # sshing to the given hostname and asking it for it's preferred short name (via short_hostname() )
+    my $shortname;
     if ($SENDHOSTS[$i] =~ /\@/) { # hack to disallow dirs named user@host to simplify other things
       @sh = split(/\@/, $SENDHOSTS[$i]);
       $SH[$i] =  $sh[1];
-      mkdir "${parsync_dir}/${sh[1]}";
-      $pfplog = "${parsync_dir}/${sh[1]}/pfp-log-${DATE}";
-      } else {
-      $SH[$i] =  $SENDHOSTS[$i];
-      mkdir "${parsync_dir}/${SENDHOSTS[$i]}";
-      $pfplog = "${parsync_dir}/${SENDHOSTS[$i]}/pfp-log-${DATE}";
+      # need to ssh to dotted-quad / numeric sendhosts to extract their short hostnames so we don't end
+      # up with 2 dirs per sendhost (dotted quad and 'hostname -s')
+      # use short_hostname() to use only the local short hostname for making these dirs.
+      
+      $shortname = short_hostname($sh[1]); 
+      mkdir "${parsync_dir}/${shortname}";
+      $pfplog = "${parsync_dir}/${shortname}/pfp-log-${DATE}"; # $pfplog is the copy of the terminal output
+    } else {
+      $shortname = short_hostname($SENDHOSTS[$i]); 
+      $SH[$i] =  $shortname;
+      mkdir "${parsync_dir}/${shortname}";
+      $pfplog = "${parsync_dir}/${shortname}/pfp-log-${DATE}";
     }
-
     
     my $fhverbose = 0;
     if ($i == 0) {$fhverbose = 1;}
@@ -1055,7 +1057,7 @@ if ( $MULTIHOST > 0 ) {
     # if add '&' below, it backgrounds correctly; if add it to the REMOTECMD above, it doesn't (??)
     system("$REMOTECMD &");
 #    print __LINE__, ": RTT_DELAY = [$RTT_DELAY]\n";
-    select(undef, undef, undef, 0.5); # sleep eqiv. Not RTT_DELAY since all SEND hosts should be in a LAN
+    select(undef, undef, undef, 0.5); # sleep equiv. Not RTT_DELAY since all SEND hosts should be in a LAN
   }
 }
 
@@ -1481,6 +1483,7 @@ do this, you will probably run into the string limit for 'ls'.
           else                { $spinc++; }
           sleep 1;
         }
+        # $logfile is the rsync log (vs the copy of the terminal output in the $pfplog)
         $logfile = "${parsync_dir}/rsync-log-${DATE}_${CUR_FPI}"; # each chunk gets its own log.
         $CUR_FP_FLE = "${FP_ROOT}.${CUR_FPI}";    # generate the next fpart chunk file with $CUR_FPI
         $last_CUR_FPI = $CUR_FPI;
@@ -1771,7 +1774,7 @@ if ($orphans != 0) {
   autogenerated [$PFP2STOPSCRIPT] script which will kill all user-owned 
   rsync and pfp2 processes running on all the hosts involved in this run.\n")
 }
-print "\n\nThanks for using parsyncfp. Tell me how to make it better.
+print "\n\nThanks for using parsyncfp2. Tell me how to make it better.
                           <hjmangalam\@gmail.com>\n\n";
 exit;
 
@@ -1779,6 +1782,16 @@ exit;
 ##: == Subroutines 
 ##########################################################################################
 
+# short_hostname() takes a given host and returns the 
+# local short hostname.  If it's an alphanumeric name (bridgit, bridgit.res.ucw.edu), 
+# still returns the short name.  Could do more complicated DNS querying, etc, but this is fairly fast 
+# (~1s for an 85ms connection and most of these will be on a local net, taking < 0.5s)
+sub short_hostname($hostname) {
+  my $host = shift;
+  my $shortname = `ssh $host 'hostname -s 2> /dev/null' 2> /dev/null`;
+  chomp $shortname;
+  return $shortname;
+}
 
 #  this sub handles a bunch of cases: must handle the TARGET
 #   POD::/remote/path/to/drop - if --hostlist hosts don't have their own path (not MODULE), 
@@ -2761,9 +2774,11 @@ as to keep the total bw the same as the stated limit.  It monitors and
 shows network bandwidth, but can't change the bw allocation mid-job.
 It can only suspend rsyncs until the load decreases below the cutoff.
 If you suspend parsyncfp2 (^Z), all rsync children will suspend as well,
-regardless of current state.
+regardless of current state (in SINGLEHOST mode).  In MULTIHOST, the children
+will continue to run because they're running on different hosts (hence the 
+admonition to copy the autogenerated killscript call before launching them.) 
 
-pfp can send to anything with a standard rsync on the other end. In 'normal' 
+pfp2 can send to anything with a standard rsync on the other end. In 'normal' 
 client mode (the remote rsync starts up on demand via ssh) the target syntax 
 is either host:/fully/qualified/path or host:path (implying a dir off the 
 user's HOME dir, usually spec'ed as host:~/path, but unacceptable to rsync)
@@ -2773,17 +2788,16 @@ in the server's /etc/rsyncd.conf and /etc/rsyncd.secrets file - see
 'man rsyncd.conf'.
 
 
-Unless changed by '--interface', it assumes and monitors the routable interface.  
+Unless changed by '--interface', pfp2 assumes and monitors the routable interface.  
 The transfer will use whatever interface normal routing provides, normally
 set by the name of the target.  It can also be used for non-host-based
 transfers (between mounted filesystems) but the network bandwidth continues
 to be (usually pointlessly) shown.
 
-[NB: Between mounted filesystems, parsyncfp2 sometimes works very poorly for
-reasons still mysterious.  In such cases, I recommend the fpsync tool 
-contained in the fpart package above].
+[NB: Between mounted filesystems, rsync (& therefore pfp2) and will work very 
+poorly for reasons noted on the intertubes.  
 
-It only works on dirs and files that originate from the current dir (or
+pfp2 only works on dirs and files that originate from the current dir (or
 specified via "--startdir").  You cannot include dirs and files from
 discontinuous or higher-level dirs.  parsyncfp2 also does not use rsync's 
 sophisticated/idiosyncratic treatment of trailing '/'s to direct where 
@@ -2792,15 +2806,13 @@ trailing '/'.
 
 ** the [.parsyncfp] files **
 The [.parsyncfp] dir contains the cache dir (fpcache), and the time-
-stamped rsync log files, which are stored in a host-specific subdir, and are not 
-NOT overwritten. The STDERR/STDOUT of the entire transfer (the text that's 
-written to the screen) from each of the SEND hosts is captured in the 
-host-specific dir named pfp-log-(time)_(date). If the host is written as 
-a dotted quad (11.22.33.44) instead of the alphabetic name (bingo.bio.bcu.edu),
-there will be 2 host-specific dirs, one for the dotted quad and one for 
-the alphabetic name. Due to the terminal text coloration, the pfp* files are 
-best viewed by cat'ing them to the terminal and then copy-pasting them 
-from the terminal.
+stamped rsync log files, which are stored in a host-specific subdir. These
+are not deleted after the run, but will be removed on the next run. The 
+STDERR/STDOUT of the entire transfer (the text that's written to the screen) 
+from each of the SEND hosts is captured in the host-specific dir named 
+pfp-log-(time)_(date).  Due to the terminal text coloration strings, the 
+pfp* files are best viewed by cat'ing them to the terminal and then copy-pasting 
+them from the terminal to use as further data.
 
 ** Odd characters in names **
 parsyncfp2 will refuse to transfer some oddly named files (tho it should copy
@@ -2923,7 +2935,7 @@ initiator) have access to a common filesystem for both data and configuration in
 --commondir [s] ............ the shared, common dir in which all chunk files 
                         and rsync logs will stored.  Similar to '--altcache'
                                      but MUST be readable by all SEND hosts.
---rpath [s] .............e remote PATH prefix on the SEND hosts to check for 
+--rpath [s] ............. the remote PATH prefix on the SEND hosts to check for 
                          the bits needed to run this. Prefixed to the remote 
                              ssh cmd as 'export PATH=<rpath string>:\$PATH;' 
                          The rpath string can contain as many paths as you'd 
