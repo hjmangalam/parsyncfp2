@@ -37,7 +37,7 @@ use Term::ANSIColor;    # for alarms
 
 # update github
 # cd ~/gits/parsyncfp2/
-# git add <files to add> ie README.md parsyncfp2 scut pfp-changes.txt
+# git add <files to add> ie README.md parsyncfp2 scut stats pfp-changes.txt
 # git commit -m 'commit comment'
 # git push
 

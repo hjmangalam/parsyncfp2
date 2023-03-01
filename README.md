@@ -81,6 +81,7 @@ Should the above commands not fulfill the requirements or be missing from your s
 - reduced # of tests that access filesystem via some primitive logic.
 - the checkhost validation file (now "$HOME/.pfp-hostchecked") has been moved outside the .pfp dir tree so it survives the default deletion and renewal of ~/.pfp2
 - there are some files that pfp2 is missing: a file named '2.1.1'$'\n' including  the enclosing 's and the literal '$'\n' was skipped.
+- have started to doc internal functional chunks with the prefix ##: If you actuall want to get a sense of where the bits are that might address a bug you found, try "grep -n '##:' parsyncfp2" 
 - trying to find the balance between helpful and annoying verbosity by merging, removing frequent or large text emissions.
 - many, many bugs fixed. Many, many remain, but seem to be lower level.
 
