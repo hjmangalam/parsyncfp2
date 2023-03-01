@@ -1,4 +1,4 @@
-# parsyncfp2
+cp # parsyncfp2
 a MultiHost parallel rsync wrapper writ in Perl. 
 by Harry Mangalam <hjmangalam@gmail.com>
 Released under GPL v3.
@@ -16,12 +16,13 @@ Like parsyncfp, which uses fpart to aggregate files into chunks (or partitions) 
 As with pfp, it collects files based on aggregate size into chunkfiles which can be fed to rsync on a chunk by chunk basis.  This allows pfp to begin transferring files before the 
 complete recursive descent of the source dir is complete.  This feature can save many hours of prep time on very large dir trees.  In addition, pfp2 can re-use the chunkfiles so generated so if there's an interruption, you can skip the re-generation of the chunkfile list (which is pretty fast, but for a PB filesystem can still take a long time and generate a lot of competing IO)
 
+NB: recently fpart changed from starting its chunk files from 0 to 1, and this version of pfp2 is the first github release that tracks that change. Using fpart 1.5.1 works fine, as do the last couple of releases.
+
 If your use involves transit over IB networks, parsyncfp requires 'perfquery' and 'ibstat', Infiniband utilities written by Hal Rosenstock < hal.rosenstock [at] gmail.com > 
 
 pfp2 is tested on Linux.  The MacOSX port is in hibernation.
 
-pfp2 needs to be installed only on the SOURCE end of the 
-transfer and only works in local SOURCE -> remote TARGET mode (it won't allow remote local SOURCE <- remote TARGET, emitting an error and exiting if attempted). It requires that ssh shared keys be set up prior to operation [see here](https://goo.gl/ghCazV).  If it detects that ssh keys are NOT set up correctly, it will ask for permission to try to remedy that situation.  Check your local and remote ssh keys to make sure that it has done so correctly.  Typically, they're in your ~/.ssh dir.
+pfp2 needs to be installed only on the SOURCE end of the transfer and only works in local SOURCE -> remote TARGET mode (it won't allow remote local SOURCE <- remote TARGET, emitting an error and exiting if attempted). It requires that ssh shared keys be set up prior to operation [see here](https://goo.gl/ghCazV).  If it detects that ssh keys are NOT set up correctly, it will ask for permission to try to remedy that situation.  Check your local and remote ssh keys to make sure that it has done so correctly.  Typically, they're in your ~/.ssh dir.
 
 It uses whatever rsync is available on the TARGET.  It uses a number of Linux-specific utilities so if you're transferring between Linux and a FreeBSD host, install pfp2 on the Linux side. 
 
@@ -58,7 +59,7 @@ Should the above commands not fulfill the requirements or be missing from your s
 - fpart - Sort and pack files into partitions. Now in many distro repositories, or install from [the fpart github](https://github.com/martymac/fpart); 
 - scut - a more intelligent cut.  Included in the parsyncfp2 github
 - stats - calculate descriptive stats from STDIN. Included in the parsyncfp2 github
-- Perl::Descriptive-Statistics - basic descriptive statistical functions
+- Perl::Descriptive-Statistics - basic descriptive statistical functions, but pfp will work without it.
 
 
 ### Recommended Utilities
@@ -69,11 +70,20 @@ Should the above commands not fulfill the requirements or be missing from your s
 
 
 
-For expanded description of operation and commandline options please see the HTML manual that should be in the same directory:
-**parsyncfp2-manual.html**
-
-
 ## Changes
+
+### 2.51
+- major changes in this release.
+- this is the first version that cooperates with the new version of fpart that starts numbering at 1 rather than 0.  So the current version of fpart 1.5.1 should work fine. This change in numbering allows special handling of files larger than chunk size, now in process. If you dig in the code, you'll see special handing for zillions of tiny files as well, also in progress, but also not well-debugged.  Stay away from those options.
+- the scrolling output now is maintained until all rsyncs spawned by the SEND hosts have ended.  Before, pfp2 ended when all of the rsyncs were started.
+- fixed a major, if largely invisible bug in the way fpart was launched.
+- slowly reducing functionally duplicated variables 
+- reduced # of tests that access filesystem via some primitive logic.
+- the checkhost validation file (now "$HOME/.pfp-hostchecked") has been moved outside the .pfp dir tree so it survives the default deletion and renewal of ~/.pfp2
+- there are some files that pfp2 is missing: a file named '2.1.1'$'\n' including  the enclosing 's and the literal '$'\n' was skipped.
+- trying to find the balance between helpful and annoying verbosity by merging, removing frequent or large text emissions.
+- many, many bugs fixed. Many, many remain, but seem to be lower level.
+
 
 ### 2.44 
 - added some regex to prevent the kill script from killing the remote rsync daemon in case you're using it as root. Very much NOT recommended, but some ppl require this, apparently.

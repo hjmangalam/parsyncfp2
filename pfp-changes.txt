@@ -1,4 +1,310 @@
 ### Changes, moved from top of pfp code
+2.24.23
+
+[FIXED, finally - use kompare to track down weird paren deletions] using 2.249, with 3 send hosts, 2 of them aren't starting correctly bc of .. something.
+If theyre started after fpart has produced some chunks they work, so they're failing to start correctly.  
+
+[FIXED] the creation of the remote ssh  SEND host cmd is duplicating the '--commondir' flag.  Doesn't hurt, but cosmetically offensive.
+
+  [ssh c07n091 "export PATH=/mnt/HPC_T0/PKTEST/.pfp2:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:$PATH; \
+    /mnt/HPC_T0/PKTEST/.pfp2/pfp2.249  --date=18.25.30_2023-02-24 \
+  --mstr_md5=52ef8cc4eefbe90f8905e47a43bc5ad5 \
+  --nowait --verbose=3 --maxload=20 --slowdown=0.5 \
+  --startdir=/mnt/HPC_T2/ITER/HPC/home/ITER  --skipfpart --fpstart=2 --fpstride=3 \
+    --verbose=3 --NP=10 \
+    
+    --commondir=/mnt/HPC_T0/PKTEST --commondir=/mnt/HPC_T0/PKTEST \
+    
+    /mnt/HPC_T2/ITER/HPC/home/ITER  \
+    10.110.5.15:/mnt/b4csz850/CODAC-BACKUP/DAN 2> /dev/null \
+    |& tee -a /mnt/HPC_T0/PKTEST/.pfp2/c07n091/pfp-log-18.25.30_2023-02-24 "]
+    
+    
+2.22.23
+[ ] missed file named: '2.1.1'$'\n' literally, including '$\n. (used --ro='-a' ) try using NO rsync options (so use '-asl')
+
+[x] change $n to $NBR_RSYNCS_RNG 
+
+[fixed] REALLY need to be able to track the remaining rsyncs in the master or have the SLAVES keep emitting data after the pfp process ends or don't end the pfp until all the rsync PIDs have ended.
+( $rPIDs, $crr ) = get_rPIDs( $RSYNC_PIDFILE, $sPIDs );
+
+[x] from above, maybe keep the scrolling bandwidth chart going until all the PIDs are gone?
+better format?
+
+[x?] at iter, sometimes get this error, which must be coming from the remote SEND host:
+bash: /mnt/HPC_T0/PKTEST/.pfp2/pfp2.248: /usr/bin/env: bad interpreter: Not a directory
+Does this need a delay or sync to make sure the copy is complete?
+[x] $MYFPRNG is used to signal that FPART is still running - provides the same functionality as FPART_IS_DONE, simplify...
+FPART_IS_DONE = 1 when it ends
+$MYFPRNG = 0 when it ends;  change to use FPART_IS_DONE
+
+also the test:
+if (-e "$FP_ROOT_DIR/FPART_DONE") { $MYFPRNG = 0; }
+seems to be much overused.  Once it gets set to zero, nothing will change it back, so more tests isn't going to change things.
+
+
+[x] # the PID does not cross nodes.  THAT'S why I use the FPART_DONE file.  Idiot.  But I still dont' know why it now gets set immediately after the command gets issued.    Use the 'ps -h -p' test to tell it when to write out the file which will comm it to the slaves.
+
+if command; then command; else command; fi is not significantly longer and will always work as expected. –
+[x] when using POD, check which interface is active on a per-node basis.
+
+1-23-23
+
+[fixed] Looks like you've never asked for the checkhost option - I think the checkfile is deleted when everythign else is.
+
+[x] would be nice if at least on SH mode, if an rsync PID was still active, it would contnue reporting until it ended. (when doing unsplit huge files, xfer of those files can take much loonger than pfp2 itself.) Loop thru get_rPIDs(), until the PIDs go to 0.
+
+[ ] Looks like the --bigfile option is not splitting the files inline, but waiting for all teh splits to be done beforehand ...?
+check with  watch
+
+[ ] About to send the reassemble script
+reassemble script doesn't get the remote user name right , references '@bigben' doesn't prep rem_user correctly.  If use hjm@bigben, it works ok.
+
+[ ] getting some rsync errors on the transfer of very large files, but they did transfer correctly in the end.
+
+took 4.37m to xfer Downloads.  pfp2 ended at 1m45s, but the xfer went on for a total of 4m37s.
+Will prob take same amount of time on a LAN, but it'll keep pfp2 running for the duration. yes, exactly that
+
+[x] when --bigfiles, add INFO to say that it takes extra time to prep files before xfer starts
+
+[ ] also reduce the bandwidth warning after 1st print to 1 line overwrite
+stunted WARN: Bandwidth has been < 0.1MB/s for [10] checkperiods.  
+
+
+[x] fixed user@POD::/ format results in an error.   Should be OK.
+[x] OK - long pause after:
+stunted INFO: [102] files from the previous run have been cleared .. continuing.
+This is due to deleting and re-initializing the dirs/files, and starting fpart.  So a few seconds is 
+expected
+
+
+[x] fixed skipping column header, prob due to FPSTART being changed.
+[ ] About line 477 in pfpzot - check this out and make a sub if needed.
+    ##: Send pfp2 utils to SEND hosts    
+    if ($CHECKHOST) {    # add to checkhost() when thrashed out.
+                         # checking utilities required and providing them if not.
+                         # this has to be DISallowed when communicating to an rsyncd server.
+      if ( $VERBOSE > 2 ) { INFO("Sending utilities [$allutils] to [$a[0]:${parsync_dir}]\n"); }
+
+[x] fixed in 2.45 and on, get this error on MH xfers:
+
+stunted INFO: [57] files from the previous run have been cleared .. continuing.
+Error: any valid prefix is expected rather than "POD".
+Command line is not complete. Try option "help"
+
+where is this coming from?  not pfp2
+
+This is from the ssh command sent to bigben  I think it's parsing differently now.
+
+ssh bigben "export PATH=/home/pfp/.pfp2:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:$PATH; \
+    /home/pfp/.pfp2/parsyncfp2.245  --date=12.29.53_2023-02-14 \
+  --mstr_md5=0996e2b8e0b2404d16d995754366b853 \
+  --nowait --verbose=3 --maxload=16 --slowdown=0.5 \
+  --startdir=/home/pfp/  --skipfpart --fpstart=0 --fpstride=1 \
+     --NP=8 --commondir=/home/pfp    /home/pfp/  \
+>>>    POD::/ 2> /dev/null \
+    |& tee -a /home/pfp/.pfp2/bigben/pfp-log-12.29.53_2023-02-14 "
+
+    in 2.44, it reads:
+[ssh bigben "export PATH=/home/pfp/.pfp2:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:$PATH; \
+    /home/pfp/.pfp2/parsyncfp2.244  --date=13.37.36_2023-02-14 \
+  --mstr_md5=eba8ec56449ef795c88fecf88fe98764 \
+  --nowait --verbose=3 --maxload=16 --slowdown=0.5 \
+  --startdir=/home/pfp/  --skipfpart --fpstart=0 --fpstride=1 \
+     --NP=8 --commondir=/home/pfp    /home/pfp/  \
+>>>    tux@minilini-w:/home/tux 2> /dev/null \
+    |& tee -a /home/pfp/.pfp2/bigben/pfp-log-13.37.36_2023-02-14 "    
+    
+  so in 2.44 it's a valid host/path, while in 2.45, it's POD::/  So the changes in the remote host path sub ned to be fixed.
+  
+[ ] fixed where is the double // coming from?
+stunted DEBUG: [771]: Looping to add the fpart target: ['/home/pfp//zots' ]
+
+
+[x] using POD::/ as a target with  parsyncfp2.245 results in this error:
+stunted ** FATAL ERROR **: The MultiHost default REMOTE path [POD::] isn't formatted correctly. 
+  It needs something on the right side of the '::'. Minimally a '/' to define a remote path
+  (POD::/path/to/dir), or an rsync server module name without a leading '/' (POD::dumpster). 
+  This string is appended to any pathless hosts in the '--hosts' option. Please check. 
+  I think this is due to the changes in the remote host path checking that I  did recently cuz it's stripping the final '/' - I think I even remember doing that...
+  
+[ ] fixed --checkhost assumes MASTER user at all the hosts, even if the user is specified in the --hosts string as different. FIX
+
+[ ] start on '--zotfiles|zf=(max avg file per chunk)' option. 'max avg file per chunk' can be an integer or string entered as 10k, 24M, etc, by being fed thru the conversion sub.  
+- process is that when requested, each f.# file is checked for # of lines by 'wc -l' so we get the # of lines and then the chunk size is divided by the # of lines. so a chunk of 10g divided by 464533 lines is 
+21527 bytes so if zf=100K, this mean that the zf processing is invoked.  If not, the f.# file is just fed to rsync as normal (altho it would be interesting to see if on average, this is a good way of transmitting the data ALL the time.)
+- if the F.# needs tgz (proc'g to a compressed tarball, regardless of the compression mech - lz4 is probably the best overall for speed and compression), then:
+  - append the decompression/untar command to the remote script array  (@rem_untgz), then send the command out as a bg system command (system(tar -c --fromfiles=f.# -f - | lz4 > tar.lz4.# &))
+  Note oddity below - what seems to work is: 
+  $rem_cmd = "tar -c --files-from=f.# -f - | lz4 > tar.lz4.# ";
+  system("$rem_cmd &");
+  
+  - this approach ends up with the tgzs ending up at the top level of the remFS, so the tgzs have to be untgzed from there. Demo this to make sure: The cmd below works, < 1s for 10M
+                   looks like the --files-from option has to be a fqpn, not a ~ path name.
+                   vvvvvvvvvvvvvvvv
+  tar --files-from=/home/hjm/.pfp2/fpcache/f.6 -czf - | lz4 > ./tgz-lz4.6
+  reminder: wherever the tgz is placed, tar strips the leading '/' so it recursively places dirs from the dir it finds itself.
+  
+  so if I tar up a f.# that has 
+dir7/util/jre/lib/zi/Asia/Aden
+dir7/util/jre/lib/zi/Asia/Almaty
+dir7/util/jre/lib/zi/Asia/Amman
+dir7/util/jre/lib/zi/Asia/Anadyr
+ 
+ and transfer it to rem_host:/foo/bar/nu
+ and untgz it from there, it'll get placed as 
+ /foo/bar/nu/dir7/util/jre/lib/zi/Asia/Aden
+ etc.
+ 
+ - this seems straightforward.  ~ same as with the bigfile approach. 
+ - have to wait for f.1 to start, but after that, check each f.# and do the calc for each one.
+ - median would be better than mean, but fpart doesn't give sizes of the individual files.
+ - bc file size stats are extremely skewed to a few large ones, the mean size is not going to be representative of the pop'n.  median would be better. Could mod fpart to do it..?  OK but for now, get the basics running using mean.
+ 
+ - want the zotfile proc'g happening on EVERY host or just the MASTER?  since zotfile processing can be going on while fpart is still running, each SEND host could process it locally. That offloads the proc on the MASTER, but does it complicate things on the SEND?  Since the f.# files are 'local' to all, the SEND hosts could do this, keeping the tar/compression load off the MASTER.  SO the SHs would have to eval the f.($CUR_FPI + $FPSTRIDE) file that they're given.  This is probably the better way to do it.
+ 
+ 
+  
+  
+12-12-22
+[x] Start prefixing dev 'Notes To Self' with ##NTS so they can be stripped out of the release versions.
+[x] start prefixing debug lines with #dd ditto
+[x] TODO $rem_fqpath from parse_rsync_target() doesn't return a FULLY QUALIFIED remote path, just the remote path specified by the command - ie ~/junk -> ~/junk, not /home/tux/junk, which is what it should.  
+not a complete fix, but needs better explanation - local pfp exe can't know the FQP to a HOME without a
+an ssh (ssh tux@minilini "printenv HOME") to figure it out, so until I decide to do that, just munge as below.
+
+[x] munge ~/dir on the receiver to delete '~/' so that it rsync will digest it correctly.
+
+11-24-22
+[x] separate infiniband (and wifi?) checks by option so we don't generate pauses and crashes checking for utilities that aren't needed.  Assume that network is ethernet unless user specs wifi or IB.  If so, then check.  Wifi prob won't need anything but IB will need to distinguish between IPoIB & RDMA.
+so need --ib
+
+11-15-22
+[] - add --bigfiles as an option  to split files larger than the chunk size, rsync separately, 
+       then reassemble at the remote end and delete the split chunks both at the local and remote end when done. Otherwise, files bigger than the chunk size will just be rsynced intact, which might cause long delays in finishing the xfer, expecially if they're started at the end. This is a bit complicated, but should work as a perfect // load.
+[] - --bigfiles works as:
+    fpart now provides filesizes, so after fpart produces a complete file, if '--bigfiles' 
+    (implies a file larger than the chunksize) then check if that file is > chunk size. 
+    fpart Live mode:
+    -L    live mode: generate partitions during filesystem crawling
+    -S    do not pack files bigger than specified maximum partition size
+        but print them to stdout instead (needs -L and -s)
+    -s    limit partitions to <size> bytes
+    above fpart behavior skips trying to pack the larger-than-chunk sizes and prints the names to STDOUT
+
+    so std fpart output remains unchanged, just naming the files to be chunked:
+    (line numbers shown below are not part of output)
+      1 /home/hjm/nacs/circos/Originals/circos_cri-grants.conf
+      2 /home/hjm/nacs/circos/Originals/circos_cri-grants.png
+      3 /home/hjm/nacs/circos/Originals/circos_cri-grants.svg
+      4 /home/hjm/nacs/circos/Originals/circos_cri-interests-marmod.conf
+      5 /home/hjm/nacs/circos/Originals/circos_cri-interests-only.png
+      6 /home/hjm/nacs/circos/Originals/circos_cri-interests-only.svg
+      
+      and the exceptions are listed:
+$ ./fpart -L -S -s 10000000 -o chunks /home/hjm/nacs
+S       23128222        /home/hjm/nacs/gpfs/gpfs-for-dummies.pdf
+S       10356828        /home/hjm/nacs/nsf-nie/nsf-nie-campus-storage-plan.pdf
+S       15016313        /home/hjm/nacs/LinuxJournal/LinuxJournal_195_Full_Enterprise.pdf
+S       16935798        /home/hjm/nacs/LinuxJournal/LinuxJournal_198_full_DirB.pdf
+S       19042107        /home/hjm/nacs/LinuxJournal/LinuxJournal_TF39.pdf
+   where all the files listed are larger than the chunk size specified with '-s'
+   (and whitespace is tabs, not spaces.
+    so those should be APPENDED to the 'bigfile' as fpart goes along and then processed when 
+    fpart exits successfully. 
+    
+    If NOT using the bigfiles processing, the larger-than-chunk-size file just terminates 
+    the chunkfile
+
+    If so, fork a process to:
+      - read the bigfile, foreach  line, if size is < 1.2x chunksize, just copy that line to the next chunkfile else split on chunksize to orignal name.xx and copy the filename to the next chunkfile in the series.
+      - 
+      - split it in half (if close to the original size), or split into chunksize chunks to 
+        be transferred later if it's >> chunksize.
+      - these chunked files live in the same dir as the original; they will be deleted as 
+        soon as they're rsynced over.
+      - possibly compress it
+      - ex: cat /home/hjm/nacs/hpc-support/chr1.fa | gzip | split -b 1000000 - chr1. 
+      (the gzip yields: 10 files of 10MB instead of 38 
+      418K Nov 17 18:23 chr1.aj
+      977K Nov 17 18:23 chr1.ai
+      977K Nov 17 18:23 chr1.ah
+      ...
+      977K Nov 17 18:23 chr1.aa) altho it does take the time to read, gzip, and write the results
+      for TB sized files, this may not be useful.
+      
+      - create an f.big.#aa, f.big.#ab, etc  temp file, log it to big.log and wait until fpart 
+        has finished.
+      - then mv all the f.big.#aa serially to the appro f.# name to await processing as the 
+        xfer continues.
+      - on completion of xfer, iterate thru big.log (if naming is good, do we need a big.log? yes, 
+        if only to reconstitute the original files.) called 'remote_reassemble.sh' in the test script.
+        and cat the multiple parts of each file together, decompressing if nec.
+        if ($COMPRESS) {cat /path/to/dir/f.big.#* | $DECOMPRESS_PROG > {name from f.#}}
+        else {cat /path/to/dir/f.big.#* > {name from f.#}}
+        
+        so the end of pfp2 is
+        scp the remote_reassemble.sh file over to the remote:/tmp/pfp2, chmod it to 'x'
+        ssh user@remote 'cnmod +x /tmp/pfp2/remote_reassemble.sh ; /tmp/pfp2/remote_reassemble.sh', capturing stderr and stdout and dump that to the output as INFO.
+        
+        BUT, this delays the remote-join until the whole pfp2 is done.  It would be more efficient 
+        to cat each fileset when the file set has been finished.  In order to do that, 
+        each cat command has to be issued after the last of the fileset has been sent. Hmmm.
+        And in order to do THAT, have to track each fileset and when done, init an ssh command
+        to do the cat.  Hmmm.  certainly doable but wait til original bigfiles approach is working. 
+        
+        
+08-17-22
+
+[X] Correct help about FS to FS transfers
+[x] detect when trying to do FS to FS transfers and decline and/or supply an alternative
+[x] change handling of message that says:
+  stunted INFO: 
+      The number of chunk files generated by fpart [0] are currently 
+      fewer than the # of rsync processes you specified [4]. However, this may be 
+      due to a large chunkfile size and a slow filesystem crawl by fpart.  
+      If so, it will work itself out as both progress. 
+      
+      Did you check the dir tree / file list to make sure you're setting the chunk 
+      size appropriately (--chunksize) ?  It's currently set to [10485760].
+      Will sleep for 2s to let fpart catch up.
+      
+      This is normal for the parsyncfp2 startup process.
+  
+  or put it behind a --verbose=3 test
+  
+  
+
+06-26-22
+[ ] should write up a brief description of how pfp2 works in both SH and MH mode
+[x] reduce default verbosity 
+[ ] start socket control; initiating machine is server; create, bind socket, listen, accept 
+    sendhosts are clients, create socket at port given by server, connect to port
+    
+    commands to create:
+      - kill fpart, pfp2 itself (which should kill all child rsyncs)
+      - report interim values of .. bandwidth, load, use this to make up a new graphical dashboard?
+      - set new values of period, maxload, etc
+      - 
+      
+    server send out commandline with specified port number, incr +1 per sendhost
+    clients create socket at that port, listen for commands, execute commands internally based on 
+    internal loop.
+    see: https://www.javatpoint.com/perl-socket-programming
+    https://perldoc.perl.org/perlipc#TCP-Servers-with-IO::Socket
+    
+    we'll need bidirectional comms, since the client will need to send collected data and the server will need to be able to send commands to control the slaves.  Sockets are bidirectional so one connection should be enough.
+    
+    actual usage: once master has finished launching all the sendhosts, goes into a loop where it checks all sendhosts for data, and can send them commands from the vocab:
+    - k (kill pfp2 on sendhosts)
+    - s (suspend pfp2 on sendhosts)
+    - c (change some parameter) checkperiod, maxload, verbosity, maxbw
+    - r (report) everything that can be reported NOW (if long checkperiod, useful to see current values)
+        might also report back on 'df -h' of the target filesystem - 
+    
+    the sendhost clients send back data in a stream of bytes formatted as
+    [hostname],[1m loadavg],[BW],[running PIDs],[susp PIDs],[chunks done]
+    (chunks total is from master running fpart)
 
 06-19-22
 After convo with Peter:
@@ -54,7 +360,7 @@ S[tab]size[tab]filename
 once fpart  is finished, read this file line by line, splitting it up and decide what to do with it.
   - if the filesize < 2x chunksize, just rsync it as a single file.
   - if it's >2x chunksize, split it into chunksize parts and put each chunk in its own f.#
-  - AND add that file to the list that has to be cat'ed tback together again after everythign has finished.
+  - AND add that file to the list that has to be cat'ed back together again after everything has finished.
   - do need to see how much speed this adds to the process.  If it's too slow, why bother.
 
 
@@ -315,9 +621,9 @@ come on - see it when there are maybe 2 of 8 processes waiting to complete, wen 
 - [ ] re-write the plotting sequence (~1030) in native gnuplot to remove the dependency on feedgnuplot.
 
 - [ ] consider spec'ing ITER send hosts to REQUIRE x GB NVME to support --losf / --bigfiles
-bc... reading a dir tree to tar/compress it or read a huge file to split it into chunks is really no faster than using rsnc to send it. UNLESS, it's only a single read/tar/compress stream into RAM or a fast SSD and then send the chunk from there.  writing it back to even a fast // FS is a net loss.  For --losf, it is probably useful for chunk of zotfiles -> tar -> lz4 -> rsync.
+bc... reading a dir tree to tar/compress it or read a huge file to split it into chunks is really no faster than using rsync to send it. UNLESS, it's only a single read/tar/compress stream into RAM or a fast SSD and then send the chunk from there.  writing it back to even a fast // FS is a net loss.  For --losf, it is probably useful for chunk of zotfiles -> tar -> lz4 -> rsync.
 But then the remote data chunk has to be extracted again (optionally?)
-ITER is almost certainly not going to be sending zotfiles, much more likely there will be hugefiles which need to get (possibly) compressed, split, then sent, then reconstitured on teh remote side.
+ITER is almost certainly not going to be sending zotfiles, much more likely there will be hugefiles which need to get (possibly) compressed, split, then sent, then reconstituted on the remote side.
 
 
 01-29-22

@@ -21,9 +21,9 @@ use vars qw( $wide $dist $Xsize $Ysize $ln $N $sum $Min $Max $XYDist @Data $page
     $pConfindex
 );
     
-$VERSION = "2.1.2 Waiting for NoSco";
-$DATE = "June 2, 2021";
-$ONLY = 0;
+$VERSION = "2.1.3 Rain, rain, rain"; # adds missing raw output to $ONLY outputs
+$DATE = "Jan 5, 2023"; 
+$ONLY = 0; # def if want specific outputs ONLY
 if (!defined $ENV{'PAGER'}) {$pager = "less";};
 $gfmt = 1;
 $NWH = 0;
@@ -117,10 +117,9 @@ if ($pPopKURTOSIS){$pr[$ONLY++] = "PopKurt";}
 if ($pQUANTILE){$pQindex = $ONLY; $pr[$ONLY++] = "Quantiles";}
 # $ONLY is now pointing past the end of the array
 if ($CAPTURE) {open (CAP, "> ./stats.exceptions") or die "Can't open filter file [./stats.filtered]"; }
+if ($raw) { $gfmt = 0; } # set to print raw, NOT in perl native format
 
 # print indiv results by using $pr[x] as header and $OUTPUT{"$pr[x]"} as the value.
-if ($raw) {$gfmt = 0;} # set to perl native format
-
 #  perltidy cmd to format uniformly: perltidy -ce -i=2 -l=100 stats 
 
 # 06.02.2021 fixed bug that disabled correct (single) outputs if all input numbers were the same 
@@ -455,7 +454,8 @@ if (! $stdout) {
         } elsif ($pCONF) {
              printf "%s%s",$OUT{$pr[0]},$od; 
         } else {
-            printf "%g\n",$OUT{$pr[0]};
+            if ($gfmt) { printf "%g\n",$OUT{$pr[0]}; }
+            else {       printf "%d\n",$OUT{$pr[0]}; } # raw
         }
     } elsif ($ONLY > 1) {
         print "#";
@@ -465,7 +465,8 @@ if (! $stdout) {
         for (my $r=0;$r<=$#pr; $r++) {
             if ($r == $pConfindex) { printf "%s%s",$OUT{$pr[$r]},$od; }
             elsif ($r != $pQindex) {
-                printf "%12g%s",$OUT{$pr[$r]},$od;
+                if ($gfmt) {printf "%12g%s",$OUT{$pr[$r]},$od;}
+                else       {printf "%12d%s",$OUT{$pr[$r]},$od;}
             } elsif ($pQUANTILE) {
                 printf "(quantiles next lines)\nQuant\tIndex\tValue\n%s",$OUT{$pr[$r]},$od;
             }

@@ -14,8 +14,13 @@
 # scp ${filename}   dabrick:~/bin; ssh moo 'scp bin/scut hmangala@hpcs:~/bin'
 # cd ~/gits/scut; cp ~/bin/scut .; git add scut; git commit -m 'commit message'; git push
 
-
-
+# [] TODO - what about adding --append or --join to append a specified number of fields together to make one filed such as when you have a series of numeric fields, then a string identifier that has a lot of whitespace:    
+#       0       1     2                3 4     5    6 7      8
+# like [7229192 Aimee Mann/Whatever/06 - Aimee Mann - Stupid Thing.mp3]
+# so --join='1 8' would join the fields 1 thru 8 into a single field, separated by the --join-delim|jd
+# by default a ' ' and could also be quoted as well.
+# so the output would be look similar, but would be 
+# 7229192<tab>'Aimee Mann/Whatever/06 - Aimee Mann - Stupid Thing.mp3'
 # Version 1.38
 # Changes:
 #   1.39   05-05-21 - writing .scutjunk in a non-writable dir won;t work.  redirected to user HOME
