@@ -72,9 +72,20 @@ Should the above commands not fulfill the requirements or be missing from your s
 
 ## Changes
 
+### 2.55
+- some major fixes, but not major behavioral changes.
+- figured out why rsync options (--ro) were failing sometimes - they need to be '"double quoted"' (and then re-double quoted) to make it thru getopt & sending to the SEND hosts
+- thanks to GabeT for the bug report and fix for creating the partial pfp2 command that goes to SEND hosts. 
+- And alerting me to some other issues with that process. Prob more to come.
+- fixed the case where SEND hosts (and remote servers) have users other than the originating account
+- more interface cleanups, added a sub clearline to blank overwritten info lines.
+- removed a bunch of zombie vars.
+
+
 ### 2.51
 - major changes in this release.
-- this is the first version that cooperates with the new version of fpart that starts numbering at 1 rather than 0.  So the current version of fpart 1.5.1 should work fine. This change in numbering allows special handling of files larger than chunk size, now in process. If you dig in the code, you'll see special handing for zillions of tiny files as well, also in progress, but also not well-debugged.  Stay away from those options.
+- this is the first version that cooperates with the new version of fpart that starts numbering chunks
+at 1 rather than 0.  So the current version of fpart 1.5.1 should work fine. This change in numbering allows special handling of files larger than chunk size, now in process. If you dig in the code, you'll see special handing for zillions of tiny files as well, also in progress, but also not well-debugged.  Stay away from those options.
 - the scrolling output now is maintained until all rsyncs spawned by the SEND hosts have ended.  Before, pfp2 ended when all of the rsyncs were started.
 - fixed a major, if largely invisible bug in the way fpart was launched.
 - slowly reducing functionally duplicated variables 
