@@ -3076,7 +3076,7 @@ sub fix_ssh_config () {
   } else {
     $append_fxt = 1;
   }
-  if ($append_fxt) {
+  if ($append_fxt && !$NOWAIT) {
     INFO(
       "parsyncfp2 would like to append 'ForwardX11Trusted yes' & 'ForwardX11 yes' 
         to your ~/.ssh/config.
