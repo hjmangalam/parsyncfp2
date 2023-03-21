@@ -1845,7 +1845,7 @@ do this, you may run into the string limit for 'ls'.
           print __LINE__, " : chunk file overrun. CUR_FP_FLE = [$CUR_FP_FLE],  NBR_FP_FLES=[$NBR_FP_FLES]\n"; 
           my $lsq = `ls -lt $CUR_FP_FLE`;
           print __LINE__, " : status of [$CUR_FP_FLE] : [$lsq]\n";
-        } 
+        }
         if ( -e $CUR_FP_FLE ) {
           ##: Compose RSYNC_CMD
           fixfilenames( $CUR_FP_FLE, $ROOTDIR );    # check/fix the path to f.# is OK
@@ -2294,7 +2294,6 @@ sub parse_rsync_target ( $$$$ ){
      with same module name; 'user' in the POD case is the rsyncd user, NOT the 
      login/ssh user & can be mass-specified via the POD string)
   ";
-  
   if (($target !~ 'POD::/') && ($target !~ /:/ ) ) 
   { 
     FATAL("$usage"); # there's another usage call below.  If problems, check both conditions.
@@ -2585,7 +2584,7 @@ sub checkhost ( "NODETYPE", $HOST2CHECK, $REM_USER, $RSYNCMODULE, $ALTCACHE, $VE
   my @L; my $N;
   my $optional = "Optionally udr (scut & stats provided with parsyncfp2).  
     See '--help' or HTML manual for availability.\n";
-  
+
   if ($VERBOSE >= 2) { 
     my $rec_chk = "";
     if ($ntype =~ "RSYNC") { $rec_chk = "Possible delay waiting for 5 pings.";}
@@ -3120,7 +3119,7 @@ sub fix_ssh_config () {
   } else {
     $append_fxt = 1;
   }
-  if ( $append_fxt && !$NOWAIT ) {
+  if ($append_fxt && !$NOWAIT) {
     INFO(
       "parsyncfp2 would like to append 'ForwardX11Trusted yes' & 'ForwardX11 yes' 
         to your ~/.ssh/config.
@@ -3347,7 +3346,7 @@ have access to a common filesystem for both data and configuration info.
                     You can prefix POD with the USER to specify the user for 
                all REC hosts, and append the PATH for all REC hosts as well.
                                        ie    mike\@POD::/where/to/drop/files
-                              (More info below and see Good Example 4 below)
+                    (More info below and see Good Example 4 below)
 --checkhost  ............. pre-check to make sure that the SEND & REC hosts
                     specified with '--hosts' do not have any rsyncs running.
                 If they do, the number of them is reported. Those rsyncs may 
