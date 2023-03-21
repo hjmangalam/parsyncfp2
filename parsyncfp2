@@ -39,9 +39,18 @@ use Term::ANSIColor;    # for alarms
 
 # update github
 # cd ~/gits/parsyncfp2/
-# git add <files to add> ie README.md parsyncfp2 scut pfp-changes.txt
+# git add parsyncfp2 README.md pfp-changes.txt scut stats
 # git commit -m 'commit comment'
 # git push
+
+# if hit a conflict (accept a PR, merge on github, the continue editing on stunted), try
+# git reset --merge
+# git add <conflicting files>
+# git commit -m 'comment'
+# git pull # to check, should be up to date
+# git push
+# if above doesn't work, try a git clone in another dir, then kompare the 2 files, 
+#   apply the conflicting diffs, THEN try the above again.
 
 ##: ITER notes
 # cd ~/bin; scp parsyncfp2.246  bridgit:~/iter; cd - ;  # from stunted, also scut stats
@@ -356,11 +365,8 @@ if ( $RSYNCOPTS =~ /-[a-zA-Z]+[vh]/ || $RSYNCOPTS =~ /-[vh]/ ) {
 ##: reformat RSYNC_OPTS 
 # same-SEND host needs single quotes, MH format needs requoted into '"double quoted"'
 #print __LINE__, " : TARGET=[$TARGET], RSYNCOPTS=[$RSYNCOPTS]\n"; pause();
-if ($TARGET =~ /POD/ && $RSYNCOPTS !~ /^" && $RSYNCOPTS !~ "$/) {
+if ($TARGET =~ /POD/ && defined $RSYNCOPTS && $RSYNCOPTS !~ /^" && $RSYNCOPTS !~ "$/) {
   $RSYNCOPTS = '\'"' . $RSYNCOPTS . '"\'';
-    #FATAL("rsync option string [$RSYNCOPTS] has to be formatted inside of both single 
-    #and double quotes, like --ro '\"-z --progress\"'. Try again."); pause();
-  #print __LINE__, " : RSYNCOPTS=[$RSYNCOPTS]\n"; 
 }
 #print __LINE__, " : RSYNCOPTS=[$RSYNCOPTS]\n"; pause();
 
@@ -1845,11 +1851,11 @@ do this, you may run into the string limit for 'ls'.
           print __LINE__, " : chunk file overrun. CUR_FP_FLE = [$CUR_FP_FLE],  NBR_FP_FLES=[$NBR_FP_FLES]\n"; 
           my $lsq = `ls -lt $CUR_FP_FLE`;
           print __LINE__, " : status of [$CUR_FP_FLE] : [$lsq]\n";
-        }
+        } 
         if ( -e $CUR_FP_FLE ) {
           ##: Compose RSYNC_CMD
           fixfilenames( $CUR_FP_FLE, $ROOTDIR );    # check/fix the path to f.# is OK
-          
+                    
           $RSYNC_CMD = qq(cd $TRIMPATH && $UDR rsync  --bwlimit=$MAXBW  $RSYNCOPTS --log-file=$logfile --files-from=$CUR_FP_FLE '$ROOTDIR' $rat_hoststring  & echo \"\${!}\" >> $RSYNC_PIDFILE);
          
           if ($DEBUG) { DEBUG( __LINE__,  "Starting [$RSYNC_CMD]" ); }
@@ -2294,6 +2300,7 @@ sub parse_rsync_target ( $$$$ ){
      with same module name; 'user' in the POD case is the rsyncd user, NOT the 
      login/ssh user & can be mass-specified via the POD string)
   ";
+  
   if (($target !~ 'POD::/') && ($target !~ /:/ ) ) 
   { 
     FATAL("$usage"); # there's another usage call below.  If problems, check both conditions.
@@ -2584,7 +2591,7 @@ sub checkhost ( "NODETYPE", $HOST2CHECK, $REM_USER, $RSYNCMODULE, $ALTCACHE, $VE
   my @L; my $N;
   my $optional = "Optionally udr (scut & stats provided with parsyncfp2).  
     See '--help' or HTML manual for availability.\n";
-
+  
   if ($VERBOSE >= 2) { 
     my $rec_chk = "";
     if ($ntype =~ "RSYNC") { $rec_chk = "Possible delay waiting for 5 pings.";}
@@ -3119,7 +3126,7 @@ sub fix_ssh_config () {
   } else {
     $append_fxt = 1;
   }
-  if ($append_fxt && !$NOWAIT) {
+  if ( $append_fxt && !$NOWAIT ) {
     INFO(
       "parsyncfp2 would like to append 'ForwardX11Trusted yes' & 'ForwardX11 yes' 
         to your ~/.ssh/config.
@@ -3346,7 +3353,7 @@ have access to a common filesystem for both data and configuration info.
                     You can prefix POD with the USER to specify the user for 
                all REC hosts, and append the PATH for all REC hosts as well.
                                        ie    mike\@POD::/where/to/drop/files
-                    (More info below and see Good Example 4 below)
+                              (More info below and see Good Example 4 below)
 --checkhost  ............. pre-check to make sure that the SEND & REC hosts
                     specified with '--hosts' do not have any rsyncs running.
                 If they do, the number of them is reported. Those rsyncs may 

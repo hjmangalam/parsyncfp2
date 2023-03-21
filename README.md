@@ -76,7 +76,7 @@ Should the above commands not fulfill the requirements or be missing from your s
 - minor changes, add usability.
 - in Multihost mode, added code for allowing t/csh shells (as well as previous sh-like shells) on SEND hosts (so setting remote RPATHS should work)
 - some help edits to clarify how things work.
-- more fixes for the rsync options.  Now DON'T need double quoting - pfp2 now takes care of that internally 
+- more fixes for the rsync options.  Now DON'T need double quoting - pfp2 now takes care of that internally.   And a quick followup to fix that fix (if didn't supply an --ro, would die.)
 - fixed erroneous 'fix' of # of rsyncs going (should almost always be at NP)
 
 ### 2.55
