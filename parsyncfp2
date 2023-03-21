@@ -56,10 +56,10 @@ use vars qw($allPIDs $ALL_SYS_RSYNC_PIDS $ch $CHECKPERIOD $cmd
   $crr $CUR_FP_FLE $CUR_FPI $DATE $MASTERDATE $dcnt $DEBUG $DBC @DIRS @DIRS2SYNC $dirtmp
   $EMAIL $Filecnt %FILES $fl $fn $fnd2r $FOUT $FPART_LOGFILE 
   $FPARTSIZE $FPARTSIZE_N $FP_PIDFILE $FP_ROOT $FP_ROOT_DIR
-  $FP_HOLD_ROOT $FP_HOLD_DIR $cyclecnt $OTHERFPRNG 
+  $FP_HOLD_ROOT $FP_HOLD_DIR $cyclecnt $OTHERFPRNG $MAX_BG_JOBS
   $hdr_cnt $hdr_rpt $HELP $IF_SPEED $VERBOSE $FP_SAVE_DIR $PFP2STOPSCRIPT
   $LOAD1mratio $loadavg $logfile $HOSTNAME $MAXBW $MAXLOAD $NBR_FP_FLES
-  $NCPUs $NDIRS $NETIF $NOWAIT $NP $NP_chunk $ALTCACHE
+  $NCPUs $NDIRS $NETIF $NOWAIT $NP $NP_chunk $ALTCACHE $MSTR_SHELL
   $parsync_dir $PARSYNCVER $RSYNC_PIDFILE $prev_cache $lenPID $DISPOSE
   $rem_host $remote $rem_path $rem_user  $rootdir $rPIDs $sPIDs $pfplog
   $ROOTDIR $RSYNC_CMD $RSYNCOPTS  $STILLRSYNCS $DFLT_RSYNCOPTS
@@ -83,8 +83,8 @@ my @argv = @ARGV;
                 # also defines where $CUR_FPI starts 
                 # (fpart now starts at 1, not 0, to support bigfiles)
 $PARSYNCVER  = << "VERSION";
-parsyncfp2 version 2.55 (Github Debub))
-Mar 17, 2023
+parsyncfp2 version 2.56 (Sargasso Apocalypse)
+Mar 20, 2023
 by Harry Mangalam <hjmangalam\@gmail.com>
 
 parsyncfp2 is a Perl script that wraps the near-miraculous Tridgell/
@@ -124,16 +124,26 @@ VERSION
   "debug|d!"      => \$DEBUG,       # developer-level info; (historical) alias for '-v 3'
   "udr!"          => \$UDR,         # non-user/expt'l; call for the use of UDR/UDT if available
   "hosts=s"       => \$HOSTLIST,    # series of SEND and REC hosts, optionally with REC paths
-  "zotfiles=s"    => \$ZOTFILES,    # opt string is 'Max Avg file size, Max # pfp2 jobs to run
-                                    # simultaneously'
+  "maxbgjobs=i"   => \$MAX_BG_JOBS, #  Max # background jobs to run simultaneously' (see zotfiles,
+                                    # bigfiles below). If not set, defaults to some number,
+                                    # automatically increments --maxload by 1.5x$MAX_BG_JOBS if not
+                                    # explicitly set.
+  "zotfiles=s"    => \$ZOTFILES,    # opt string is 'Max Avg file size
                                     # so its a 2 part string that has to be parsed into $ZOTFILES and 
-                                    # $MAXBZJOBS. Shared with --bigfiles.  If only --zotfiles, use 
-                                    # $MAXBZJOBS, if --bigfiles also, $MAXBZJOBS += $BIGFILES.
+                                    # $MAX_BG_JOBS. Shared with --bigfiles.  (see bigfiles below)
                                     # zillions of tiny files opt; the opt string is the avg # of files
                                     # in the chunk that if exceeded, triggers the tar/LZ4 of all files
                                     # in the chunk into a tarball to send and then untar at remote end.
-  "bigfiles|bf!"  => \$BIGFILES,    # $BIGFILES = the Max # of bg split commands to run simultaneously
-                                    # see above for cooperation with --zotfiles
+  "bigfiles|bf!"  => \$BIGFILES,    # $BIGFILES uses $MAX_BG_JOBS = Max # of bg split commands to run
+                                    # simultaneously
+                                    # see above for cooperation with --zotfiles, with which it shares a
+                                    # common Q'ing system.  $MAX_BG_JOBS = the total for BOTH
+                                    # zotfiles and bigfiles, so if it's 4 and there are already 4
+                                    # zotfile jobs running, bigfiles jobs will just go into the Q until 
+                                    # a zotfile job finishes. These jobs will also increase the system 
+                                    # load so consider this when setting --maxload altho setting the 
+                                    # job number will automatically increase the maxload to 
+                                    
   "commondir=s"   => \$ALTCACHE,    # alias for ALTCACHE. If it's the multihost version, you have to
                                     # 'mkdir $ALTCACHE/hostname' & write all their logs, etc in there,
                                     # read the fpart chunks from $ALTCACHE
@@ -177,6 +187,10 @@ if ($SKIPFPART) {
 }
 if   ( !defined $ALTCACHE ) { $parsync_dir = "${HOME}/.pfp2"; }
 else                        { $parsync_dir = "${ALTCACHE}/.pfp2"; }
+
+##: Set Master Shell
+# get the MASTER shell to set local shell vars if needed (export vs setenv)
+$MSTR_SHELL = `echo \$SHELL`; chomp $MSTR_SHELL;
 
 # get md5sum of executing program to pass to slave to check identical programs running on both ends.
 ##: MD5 checks of executable
@@ -274,9 +288,11 @@ my $rrcc = 0; # running rsyncs cycle counter
 
 ##: Define & init Getopt flag vars
 if ( defined $HELP ) { usage($parsync_dir); }
-if ( !defined $RPATH ) {
-  $RPATHPFX = "export PATH=${parsync_dir}:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:\$PATH;";
-} else { $RPATHPFX = "export PATH=${RPATH}:${parsync_dir}:/usr/sbin:/sbin:/usr/bin:/bin:\$PATH;" }
+
+# ##: Set up $RPATH depending on whether SHELL is bash-like (default) or csh-like
+# if ( !defined $RPATH ) {
+#   $RPATHPFX = "export PATH=${parsync_dir}:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:\$PATH;";
+# } else { $RPATHPFX = "export PATH=${RPATH}:${parsync_dir}:/usr/sbin:/sbin:/usr/bin:/bin:\$PATH;" }
 
 # UDR not currently working until I can test it on ESNET
 if   ( !defined $UDR )        { $UDR = ""; }
@@ -288,8 +304,9 @@ else { # insert the -S flag, send STDOUT to the BIGFILES file.
   @SPLIT_PIDs = (0) x $BIGFILES ; # init @SPLIT_PIDs to 0s
 } 
 
-# resolve all the --zotfiles options / conflictsime to 
-if ( !defined $ZOTFILES && $TARGET =~ /POD::/ ) {
+# resolve all the --zotfiles options / conflicts
+$TARGET = $ARGV[$#ARGV];
+if ( defined $ZOTFILES && $TARGET =~ /POD::/ ) {
   FATAL("Can only use the '--zotfiles' option with the UniHost version 
   (ie, no 'POD::' targets.)  Remove the --zotfiles option or use the UniHost 
   version as the target 'user\@somehost:/path/to/store'");
@@ -335,9 +352,20 @@ if ( $RSYNCOPTS =~ /-[a-zA-Z]+[vh]/ || $RSYNCOPTS =~ /-[vh]/ ) {
   makes too much noise (probably -v, -h --verbose, --version). Try again.."
   );
 }
-if ( !defined $RSYNCOPTS ) {
-  $RSYNCOPTS = ""; $RSYNCOPTS = " -asl ";
-} elsif ( $RSYNCOPTS !~ /-/ ) {
+
+##: reformat RSYNC_OPTS 
+# same-SEND host needs single quotes, MH format needs requoted into '"double quoted"'
+#print __LINE__, " : TARGET=[$TARGET], RSYNCOPTS=[$RSYNCOPTS]\n"; pause();
+if ($TARGET =~ /POD/ && $RSYNCOPTS !~ /^" && $RSYNCOPTS !~ "$/) {
+  $RSYNCOPTS = '\'"' . $RSYNCOPTS . '"\'';
+    #FATAL("rsync option string [$RSYNCOPTS] has to be formatted inside of both single 
+    #and double quotes, like --ro '\"-z --progress\"'. Try again."); pause();
+  #print __LINE__, " : RSYNCOPTS=[$RSYNCOPTS]\n"; 
+}
+#print __LINE__, " : RSYNCOPTS=[$RSYNCOPTS]\n"; pause();
+
+if ( !defined $RSYNCOPTS ) { $RSYNCOPTS = " -asl "; } # single word opts don't need the double quoting.
+elsif ( $RSYNCOPTS !~ /-/ ) {
   FATAL("You didn't have a '-' in your '--ro' string. 
   You need to supply the options exactly as you would with rsync, with 
   leading '-' or '--'. Try again..");
@@ -366,7 +394,7 @@ if ( !defined $RSYNCOPTS ) {
 
 ##: ARGV processing
 # this takes care of the last ARGV so that all the rest of the words are target dirs&files
-$TARGET = $ARGV[$#ARGV];    # remote rsync target
+#$TARGET = $ARGV[$#ARGV];    # remote rsync target
 if ( !defined $TARGET ) {
   FATAL("No target defined! Where you gonna put this stuff??!?\nTry '--help' for the built-in help.");
 }
@@ -381,6 +409,7 @@ if (!$SKIPFPART && $NP < 4 ) {
 ##: parse_rsync_target call
 # ### TODO move to appro place and reduce the args to what we need. Does the remote 
 # target processing once and for all.
+# init all the vars needed
 my $rem_user        = "";
 my $rem_host        = "";
 my $rsync_type      = "";
@@ -504,7 +533,7 @@ if ( defined $HOSTLIST ) { # from --hosts=$HOSTLIST, should never be processed b
       system "echo 'hostcheck verified from parsyncfp2' > \"$HOME/.pfp-hostchecked\" ";
     }
 
-    # Since it;s in HOSTLIST block, parse_rsync_target() will only get POD:: args.  ie $TARGET will
+    # Since it's in HOSTLIST block, parse_rsync_target() will only get POD:: args.  ie $TARGET will
     # be a POD::/path string and last param will be a REC host string from the HOSTLIST
     ##: parse_rsync_target in HOSTLIST block, using $TARGET and REC host as last param
     ($rem_user, $rem_host, $rsync_type, $rem_fqpath, $rem_homepath, $RSYNCMODULE, $pod_remotepath, $rat_hoststring ) = parse_rsync_target ($USER, $TARGET, $ALTCACHE, $a[1]); # 
@@ -995,27 +1024,17 @@ if ( $argv[$#argv] =~ /POD::/ ) {    # if this is the multihost version..
     #print __LINE__, " : argv[$i]=[$argv[$i]]\n";
     if ( $argv[$i] =~ /^-/ ) {  # was -> /-/
       # special case for rsync options since they have to be requoted to be passed thru to the SEND hosts - write the requote as a sub?
+      #print __LINE__, " : RSYNCOPTS=[$RSYNCOPTS], $argv[$i]\n";
       if ( $argv[$i] =~ '--ro' ) {
         if ( $argv[$i] =~ '=' ) {
-          # change 'ro options' to '"ro options"' again
-           $argv[$i] =~ s/"/\+/;  # change the 1st " to +
-           $argv[$i] =~ s/"/"'/; # change the 2nd to the correct "'
-           $argv[$i] =~ s/\+/'"/; # change the '+' back to '"
-        } else { # ' ' instead of '=' 
-          $argv[$i+1] =~ s/"/\+/;  # change the 1st " to +
-          $argv[$i+1] =~ s/"/"'/; # change the 2nd to the correct "'
-          $argv[$i+1] =~ s/\+/'"/; # change the '+' back to '"
-          $argv[$i] .= '=' . $argv[$i+1]; 
-          $argv[$i+1] = ''; # blank it jic
-          #print __LINE__, " : --ro opt = [$argv[$i]]\n";
-          $cmplt_arg .= " $argv[$i] ";
-          $i +=2; # skip the bare ro option
+          $cmplt_arg = " --ro=$RSYNCOPTS ";
+        } else {
+          $cmplt_arg = " --ro=$RSYNCOPTS "; $i +=2; # skip the bare ro option
         }
-        #print __LINE__, " : --ro opt = [$argv[$i]]\n";
-        #$i++;
+        $rcmd .= $cmplt_arg . " ";  # and then skip this step below...
       }
       if ( $argv[$i] =~ '=' ) {    # don't need the --startdir to be transferred to the SEND client
-        if ( $argv[$i] !~ /sta|sd/ ) { 
+        if ( $argv[$i] !~ /sta|sd|ro/ ) { 
           $cmplt_arg = $argv[$i]; 
           #print __LINE__, " : cmplt_arg=[$cmplt_arg]\n";
         }
@@ -1023,13 +1042,14 @@ if ( $argv[$#argv] =~ /POD::/ ) {    # if this is the multihost version..
         # $cmplt_arg = $argv[$i]; # none of these need to be sent to SEND hosts. (UDR is a special case for now; the rest are all handled on the MASTER)
       } else {
         $cmplt_arg = $argv[$i] . '=' . $argv[ $i + 1 ]; $i++;
+        #print __LINE__, " : cmplt_arg=[$cmplt_arg]\n"
       }
 
       # don't pass these on to SEND hosts.  
       if ( $cmplt_arg =~ /chu|cs/ || $cmplt_arg =~ /int|I/ || $cmplt_arg =~ /hosts/ || $cmplt_arg =~ /nowait/ || $cmplt_arg =~ /trustme|tm/  || $cmplt_arg =~ /filesfrom|ff/ || $cmplt_arg =~ /trim|tp/   ) { 
         $cmplt_arg = ''; 
       }
-      #print __LINE__, " : cmplt_arg=[$cmplt_arg]\n";
+      #print __LINE__, " : cmplt_arg=[$cmplt_arg]\n"; # quite useful
       my $nn = my @aa = split( '=', $cmplt_arg );
       if ( $nn == 2 && $aa[0] =~ /sta|sd/ ) {    # then it's --startdir|sd=/path/to/parent
         # and it needs to strip the '--startdir' and supply only the '/path/to/parent'
@@ -1037,13 +1057,13 @@ if ( $argv[$#argv] =~ /POD::/ ) {    # if this is the multihost version..
       }
       # have to leave the chunk files for other SEND hosts to use.
       if ( $cmplt_arg =~ /dis/ ) { $cmplt_arg = '--dispose=l'; }
-      $rcmd .= $cmplt_arg . " ";
+      if ($cmplt_arg !~ /ro/ ) {   $rcmd .= $cmplt_arg . " "; } # cosmetic hack
     }
     #print __LINE__, " : i=[$i] rcmd=[$rcmd], cmplt_arg=[$cmplt_arg]\n"; pause();
   }
 }  # if ( $argv[$#argv] =~ /POD::/ )
 
-# print __LINE__, " :[$i] FINAL rcmd = [$rcmd]\n"; pause();
+#print __LINE__, " :[$i] FINAL rcmd = [$rcmd]\n"; pause();
 
 ##: Write out pfp2stop script and copy Perl scripts to $parsync_dir
 # write out the pfp2stop script which when exec'ed will kill off all parsyncfp2s and rsyncs on all the hosts.
@@ -1091,6 +1111,8 @@ done
 ##: Compose RSYNC_CMD & send it to all the SEND hosts
 
 my @SH; # @SH is a duplicate of SENDHOSTS but without the user@ part, mostly for MHplotfile.sh below.
+my $rem_shell; # what the SEND host uses for its shell, reused to compose the appro RSYNC command
+my $export; # set to 'export (bash-like) or 'set' csh-like
 if ( $MULTIHOST > 0 ) {
   $nbrhosts = $#SENDHOSTS + 1;
   # print __LINE__, " : nbrhosts = [$nbrhosts] \n";
@@ -1110,13 +1132,25 @@ if ( $MULTIHOST > 0 ) {
     # convoluted hack to disallow dirs in .pfp2 named user@host to simplify other things
     # too convoluted.. and doesn't make sense.  it's the $shortname that makes the dir, not the 
     # given $SENDHOSTS[$i], so all the 1st stanza can be deleted.
-    $shortname = short_hostname($SENDHOSTS[$i]); 
+    ($shortname, $rem_shell) = short_hostname($SENDHOSTS[$i]); 
     $SH[$i] =  $shortname;
     mkdir "${parsync_dir}/${shortname}";
     $pfplog = "${parsync_dir}/${shortname}/pfp-log-${DATE}";
     my $fhverbose = 0;
     if ($i == 0) {$fhverbose = 1;}
     
+    # adjust the SEND host cmd for its shell
+    if ($rem_shell =~ /csh/) { $export = "set"; }    # csh-like
+    else                     { $export = "export"; } # bash-like (default)
+
+    ##: Set up $RPATH depending on whether SHELL is bash-like (default) or csh-like
+    if ( !defined $RPATH ) {
+      $RPATHPFX = "$export PATH=${parsync_dir}:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:\$PATH;";
+    } else { 
+      $RPATHPFX = "$export PATH=${RPATH}:${parsync_dir}:/usr/sbin:/sbin:/usr/bin:/bin:\$PATH;" 
+    }
+    #print __LINE__, " : rem_shell=[$rem_shell], RPATHPFX=[$RPATHPFX]\n";
+
     # this is what get sent to all the SEND hosts in quick succession
     # BUT (!!) ${HOME} is based on the issuing user's $HOME.. Should use '~'
     my $fps = $i + 1;
@@ -1126,8 +1160,10 @@ if ( $MULTIHOST > 0 ) {
   --nowait --verbose=${VERBOSE} --maxload=${MAXLOAD} --slowdown=${RTT_DELAY} \\
   --startdir=$ROOTDIR  --skipfpart --fpstart=$fps --fpstride=$nbrhosts \\
     $rcmd \\
-    $RECHOSTS[$i] 2> /dev/null \\
+    $RECHOSTS[$i] \\
     |& tee -a $pfplog ");
+   
+#     $RECHOSTS[$i] 2> /dev/null \\ # from above; no errors to deflect in all recent tests
    
     if ( $VERBOSE > 2 ) { 
       WARN("About to send this REMOTE COMMAND to SENDHOST [$SENDHOSTS[$i]]
@@ -1548,8 +1584,7 @@ parameter significantly. If there's a good reason for exceeding it,
 you can force the internal limit to be ignored by specifying it as 
 a negative number (--chunksize=-10GB) the next time. However if you 
 do this, you may run into the string limit for 'ls'.
-"
-      );
+");
     }
   }
   ##: Un/Suspend rsyncs for loadbalancing
@@ -1637,6 +1672,7 @@ do this, you may run into the string limit for 'ls'.
     } 
     # calc the number of rsyncs to start up (currently running + suspended)
     my $R2SU = $NP - ($NrPIDs + $NsPIDs); 
+    #print __LINE__, " [$host]: R2SU = NP - (NrPIDs + NsPIDs) : $R2SU = $NP - ($NrPIDs + $NsPIDs)\n";
     
     # OK to call it just before the test below
     $NBR_FP_FLES = get_nbr_chunk_files( ${FP_ROOT_DIR} );
@@ -1645,7 +1681,7 @@ do this, you may run into the string limit for 'ls'.
     ##: Spin up more rsyncs if not enough
     # this test is OK if $R2SU above is calculated correctly (consults # suspended PIDs $NsPIDs)
  
-    while ($NrPIDs < $R2SU && !$PFP_DONE) {
+    while ((($NrPIDs + $NsPIDs) < $NP) && !$PFP_DONE) {
       #print __LINE__, " :  while ($NrPIDs < $R2SU && !$PFP_DONE) \n";
       # make sure we haven't finished
       if (! $FPART_IS_DONE && -e "$FP_ROOT_DIR/FPART_DONE")  { $FPART_IS_DONE = 1; }
@@ -1809,11 +1845,13 @@ do this, you may run into the string limit for 'ls'.
           print __LINE__, " : chunk file overrun. CUR_FP_FLE = [$CUR_FP_FLE],  NBR_FP_FLES=[$NBR_FP_FLES]\n"; 
           my $lsq = `ls -lt $CUR_FP_FLE`;
           print __LINE__, " : status of [$CUR_FP_FLE] : [$lsq]\n";
-        }
+        } 
         if ( -e $CUR_FP_FLE ) {
           ##: Compose RSYNC_CMD
           fixfilenames( $CUR_FP_FLE, $ROOTDIR );    # check/fix the path to f.# is OK
-          $RSYNC_CMD = "cd $TRIMPATH && $UDR rsync  --bwlimit=$MAXBW  $RSYNCOPTS --log-file=$logfile --files-from=$CUR_FP_FLE '$ROOTDIR' $rat_hoststring  & echo \"\${!}\" >> $RSYNC_PIDFILE";
+          
+          $RSYNC_CMD = qq(cd $TRIMPATH && $UDR rsync  --bwlimit=$MAXBW  $RSYNCOPTS --log-file=$logfile --files-from=$CUR_FP_FLE '$ROOTDIR' $rat_hoststring  & echo \"\${!}\" >> $RSYNC_PIDFILE);
+         
           if ($DEBUG) { DEBUG( __LINE__,  "Starting [$RSYNC_CMD]" ); }
         # this loop launches the new rsyncs, but it only launches them at CHECKPERIOD intervals.
         } else {
@@ -1824,7 +1862,7 @@ do this, you may run into the string limit for 'ls'.
         if ( -e $CUR_FP_FLE ) { 
           # check/fix the path to f.# is OK
           if ($DEBUG) { DEBUG(__LINE__,  "Starting [$RSYNC_CMD]"); }
-          # print __LINE__,  " : [$host] Starting [$RSYNC_CMD]\n";
+          #print __LINE__,  " : [$host] : Starting [$RSYNC_CMD]\n"; #pause();
           ##: Start RSYNC_CMD
           system("$RSYNC_CMD");    # captures the bg job PID to PIDfile
           $NrPIDs++;
@@ -1837,7 +1875,7 @@ do this, you may run into the string limit for 'ls'.
             $CUR_FPI += $FPSTRIDE;
             if ( $FPART_IS_DONE && $rPIDs !~ /\d+/ && $sPIDs !~ /\d+/) { 
               $PFP_DONE = 1;             
-              print __LINE__, " : [$host] FPART_IS_DONE:[$FPART_IS_DONE] ($CUR_FPI + $FPSTRIDE > $NBR_FP_FLES) \nEXIT!!\n\n";
+              #print __LINE__, " : [$host] FPART_IS_DONE:[$FPART_IS_DONE] ($CUR_FPI + $FPSTRIDE > $NBR_FP_FLES) \nEXIT!!\n\n";
             } # this terminates the loop, which is correct, but ends pfp BEFORE all the rsyncs have finished running. 
           }
         } elsif (!$FPART_IS_DONE) {
@@ -1845,8 +1883,6 @@ do this, you may run into the string limit for 'ls'.
           sleep 2;
         } else {
           $NBR_FP_FLES = get_nbr_chunk_files( ${FP_ROOT_DIR} );
-          print __LINE__, " : WTF?? fpart has finished and the calculated CUR_FP_FLE [$CUR_FP_FLE] 
-  doesn't exist.  At this point, NBR_FP_FLES=[$NBR_FP_FLES].\n";
           WARN("fpart has finished and the calculated chunk file [$CUR_FP_FLE] 
   doesn't exist.  At this point, the number of chunk files 
   (NBR_FP_FLES) = [$NBR_FP_FLES]. Unless there's valid reason to continue, you should 
@@ -1867,7 +1903,7 @@ do this, you may run into the string limit for 'ls'.
         sleep 3;
         if (! $FPART_IS_DONE && -e "$FP_ROOT_DIR/FPART_DONE")  { $FPART_IS_DONE = 1; }
       }
-  } #else { print "                                [$host]-[$CUR_FPI]\r" ; }
+  } 
   
   ##: Detect zero bandwidth at end and kill hung rsyncs 
   #   if BW drop extends over long period (10 low reading in a row)
@@ -2167,10 +2203,17 @@ sub clearline() { print "\e[K"; } # easier to remember this way.
 # still returns the short name.  Could do more complicated DNS querying, etc, but this is fairly fast 
 # (~1s for an 85ms connection and most of these will be on a local net, taking < 0.5s)
 sub short_hostname($hostname) {
-  my $host = shift;
-  my $shortname = `ssh $host 'hostname -s 2> /dev/null' 2> /dev/null`;
+  my $host = shift; #print __LINE__, " : host=[$host]\n";
+  # my $ret = `ssh $host 'hostname -s ; echo \$SHELL 2> /dev/null 2> /dev/null' 2> /dev/null`;
+  my $ret = `ssh $host 'hostname -s ; echo \$SHELL ' `;
+  # print __LINE__, " : ret=[$ret]\n";
+  $ret =~ s/\n/#/; trim ($ret);  chomp $ret;
+  #print __LINE__, " : ret=[$ret]\n";
+  my $n = my @a = split /#/, $ret;
+  my $shortname = $a[0];
+  my $shell = $a[1];
   chomp $shortname;
-  return $shortname;
+  return $shortname, $shell;
 }
 
 #  this sub handles a bunch of cases: must handle the TARGET
@@ -2202,7 +2245,7 @@ sub short_hostname($hostname) {
  # bridgit:dumpster.  So add another input var 'hoststring' and the full created hoststring var gets returned 
 
 # called as: 
-# ($rem_user, $rem_host, $rsync_type, $rem_fqpath, $rem_homepath, $RSYNCMODULE, $pod_remotepath, $rat_hoststring) = parse_rsync_target ($USER, $TARGET, $ALTCACHE);
+# ($rem_user, $rem_host, $rem_shell, $rsync_type, $rem_fqpath, $rem_homepath, $RSYNCMODULE, $pod_remotepath, $rat_hoststring) = parse_rsync_target ($USER, $TARGET, $ALTCACHE);
 # where $rat_hoststring = rationalized hoststring
 # & $hoststring is the REC hostname from the --host string, often a naked hostname ('bridgit')
 
@@ -2251,6 +2294,7 @@ sub parse_rsync_target ( $$$$ ){
      with same module name; 'user' in the POD case is the rsyncd user, NOT the 
      login/ssh user & can be mass-specified via the POD string)
   ";
+  
   if (($target !~ 'POD::/') && ($target !~ /:/ ) ) 
   { 
     FATAL("$usage"); # there's another usage call below.  If problems, check both conditions.
@@ -2338,8 +2382,7 @@ sub parse_rsync_target ( $$$$ ){
   please add the --commondir option."
       );
     }
-  }  # elsif ( $target =~ /POD::/ )
-  elsif ($target =~ /::/) { # not POD, but does have '::'
+  }  elsif ($target =~ /::/) { # not POD, but does have '::'
     my $n2 = my @a2 = split(/::/, $target); # if it's a rsyncd module name, there will be a ::
     if ($n2 == 2  && $target !~ /POD/) { # it's std rsyncd module string.
       $rtype = 'server'; # not 'rsyncd' to prevent string overlaps with rsync 
@@ -2542,7 +2585,7 @@ sub checkhost ( "NODETYPE", $HOST2CHECK, $REM_USER, $RSYNCMODULE, $ALTCACHE, $VE
   my @L; my $N;
   my $optional = "Optionally udr (scut & stats provided with parsyncfp2).  
     See '--help' or HTML manual for availability.\n";
-
+  
   if ($VERBOSE >= 2) { 
     my $rec_chk = "";
     if ($ntype =~ "RSYNC") { $rec_chk = "Possible delay waiting for 5 pings.";}
@@ -2610,8 +2653,9 @@ qq(ssh $fqrhs "ps ux | grep rsyn[c]| grep -v '${CALLING_PROGRAM}\\|daemon' | wc 
     } else {
       if ( $VERBOSE >= 2 ) { INFO("[$host2check] is free of competing rsyncs.\n") }
     }
+    # rewrit to be shell agnostic
     $checkcmd =
-      qq(ssh $fqrhs 'if [[ -e .ssh/config ]]; then grep Host ~/.ssh/config; fi' 2> /dev/null);
+      qq(ssh $fqrhs 'test -e .ssh/config && grep Host ~/.ssh/config' 2> /dev/null);
 #      print __LINE__, " : checkcmd = [$checkcmd] \n";
     $checkout = `$checkcmd`; chomp $checkout;
     if ( $checkout =~ "Host" ) {
@@ -3076,7 +3120,7 @@ sub fix_ssh_config () {
   } else {
     $append_fxt = 1;
   }
-  if ($append_fxt) {
+  if ( $append_fxt && !$NOWAIT ) {
     INFO(
       "parsyncfp2 would like to append 'ForwardX11Trusted yes' & 'ForwardX11 yes' 
         to your ~/.ssh/config.
@@ -3098,6 +3142,29 @@ If this mod of your ~/.ssh/config file is OK, hit [Enter].  Otherwise hit [s] to
     }
   }
 }
+
+# --bigfiles|bf ..... processes files larger than the chunckfiles by splitting
+#                      them into chunk-sized bits and sending them as separate
+#                          rsync jobs to be recombined at the remote end. This
+#                        prevents an enormous file from dragging out the send, 
+#                                              but introduces some gotchas(*).
+
+# * '--bigfile' gotchas: This option is useful if your filesystem is fast and 
+# your network is slow since you have to 'split' the file which
+# involves reading it end to end and then writing it into smaller chunks.
+# Also you need the extra disk space to double the size of the large files being
+# processed, both locally and remotely.  So if you have a 7TB log file, in
+# order to use it with --bigfiles, you'll have to have an extra 7TB on the 
+# sending side AND an extra 7TB on the receiving side. This is temporary 
+# since the splitfiles (filename.0000, filename.0001, filename.0002, etc) 
+# will be recombined on the receiving side and then both sets of splitfiles
+# will be deleted. This option also prevents rsyncs from doing a true rsync
+# since it chops up the file into chunks before sending it.  If you
+# reconstitute it on  the remote end (the default), it will of course be
+# identical to the original and will re-rsync rapidly, so the --bigfiles
+# option is best used for initial  sends, not re-rsyncs.
+
+
 
 # usage: usage($parsync_dir);
 sub usage ($) {
@@ -3203,21 +3270,15 @@ or with quotes: [file\\ with\\ spaces] or ['file with spaces']
                   (enough so that fpart can collect the starter set quickly,
                          but not so many that doing file ops on them will be 
               excessive - they have to be counted a few times at each cycle)
---bigfiles|bf ..... processes files larger than the chunckfiles by splitting
-                     them into chunk-sized bits and sending them as separate
-                         rsync jobs to be recombined at the remote end. This
-                       prevents an enormous file from dragging out the send, 
-                                             but introduces some gotchas(*).
 --interface|I [s]  ......  network interface to monitor (not use; see above)
                          Only SENT bytes are displayed and this is the total
                             number of bytes sent thru the interface, not the 
                                     number sent ONLY by pfp2 (another ToDo).
 --rdma ................ report rdma bytes thru the IB or IB-bonded interface
                               otherwise, only TCP/IP bytes will be reported.
---ro [s]  .................  options passed to rsync as DOUBLY QUOTED string
-                              as follows: --ro='"rsync options"'
-                                        ie -ro='"-aslz -I --size-only"'
-                this option pauses before executing to verify the command(+)
+--ro [s]  .................  options passed to rsync as single quoted string
+                              as follows: --ro='rsync options'
+                                        ie -ro='-aslz -I --size-only'
 --checkperiod|cp [i] (3) ........ sets the period in seconds between updates
                 This is a best effort attempt.  If chunksize is set so small
          so 1000s of chunkfiles are created, file IO may lengthen this time.
@@ -3246,20 +3307,6 @@ or with quotes: [file\\ with\\ spaces] or ['file with spaces']
 --version|V  ...............................  dumps version string and exits
 --help|h  .......................................................  this help
 
-* '--bigfile' gotchas: This option is useful if your filesystem is fast and 
-your network is slow since you have to 'split' the file which
-involves reading it end to end and then writing it into smaller chunks.
-Also you need the extra disk space to double the size of the large files being
-processed, both locally and remotely.  So if you have a 7TB log file, in
-order to use it with --bigfiles, you'll have to have an extra 7TB on the 
-sending side AND an extra 7TB on the receiving side. This is temporary 
-since the splitfiles (filename.0000, filename.0001, filename.0002, etc) 
-will be recombined on the receiving side and then both sets of splitfiles
-will be deleted. This option also prevents rsyncs from doing a true rsync
-since it chops up the file into chunks before sending it.  If you
-reconstitute it on  the remote end (the default), it will of course be
-identical to the original and will re-rsync rapidly, so the --bigfiles
-option is best used for initial  sends, not re-rsyncs.
 
 == Options for MultiHost transfers (also see below)
 The MultiHost (MH) version allows you to rsync multiple streams of data via 
@@ -3297,7 +3344,10 @@ have access to a common filesystem for both data and configuration info.
                          The required last element in a multihost command is
                           'POD::/path' which is the default path for any REC
                     hosts that haven't been defined in the '--hosts' option.
-                    (More info below and see Good Example 4 below)
+                    You can prefix POD with the USER to specify the user for 
+               all REC hosts, and append the PATH for all REC hosts as well.
+                                       ie    mike\@POD::/where/to/drop/files
+                              (More info below and see Good Example 4 below)
 --checkhost  ............. pre-check to make sure that the SEND & REC hosts
                     specified with '--hosts' do not have any rsyncs running.
                 If they do, the number of them is reported. Those rsyncs may 
