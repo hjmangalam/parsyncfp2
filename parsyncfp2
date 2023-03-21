@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-#NTS split from pfpzot 2.23.23, 8.30a
+#forked from pfpzot 2.23.23, 8.30a
 # this software is Copyright Harry Mangalam <hjmangalam@gmail.com> 2019 and on.
 # parsync, parsyncfp, parsyncfp2 and my derivatives are released under the GPLv3 License.
 # fpart is released under the BSD license at the time of this writing.
@@ -92,8 +92,8 @@ my @argv = @ARGV;
                 # also defines where $CUR_FPI starts 
                 # (fpart now starts at 1, not 0, to support bigfiles)
 $PARSYNCVER  = << "VERSION";
-parsyncfp2 version 2.56 (Sargasso Apocalypse)
-Mar 20, 2023
+parsyncfp2 version 2.57 (FS revival)
+Mar 21, 2023
 by Harry Mangalam <hjmangalam\@gmail.com>
 
 parsyncfp2 is a Perl script that wraps the near-miraculous Tridgell/
@@ -196,7 +196,7 @@ if ($SKIPFPART) {
 }
 if   ( !defined $ALTCACHE ) { $parsync_dir = "${HOME}/.pfp2"; }
 else                        { $parsync_dir = "${ALTCACHE}/.pfp2"; }
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 ##: Set Master Shell
 # get the MASTER shell to set local shell vars if needed (export vs setenv)
 $MSTR_SHELL = `echo \$SHELL`; chomp $MSTR_SHELL;
@@ -247,6 +247,10 @@ $SKIPCOMPRESS =
   . "/s7z/sfx/sr2/srf/svgz/t[gb]z/tlz/txz/vob/wim/wma/wmv/xz/zip/";
 $DFLT_RSYNCOPTS = "-asl ";    # the default options to pass to rsync; blanked if define $RSYNCOPTS
 
+# print __LINE__, " :
+# argv=[@argv]
+# ARGV=[@ARGV]\n"; pause();
+
 ##: Define cache and log dirs
 # the fpart files have to be in the top-level parsync_dir, not in the per-hostname subdirs
 # so defined here.  After these are defined, can set the per-hostname subdirs just below
@@ -294,6 +298,7 @@ $LOAD1mratio = $SYSLOAD[0] / $NCPUs;
 my $LowBWMax = 100;
 my $rrcc = 0; # running rsyncs cycle counter
 
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 
 ##: Define & init Getopt flag vars
 if ( defined $HELP ) { usage($parsync_dir); }
@@ -371,8 +376,8 @@ if ($TARGET =~ /POD/ && defined $RSYNCOPTS && $RSYNCOPTS !~ /^" && $RSYNCOPTS !~
 #print __LINE__, " : RSYNCOPTS=[$RSYNCOPTS]\n"; pause();
 
 if ( !defined $RSYNCOPTS ) { $RSYNCOPTS = " -asl "; } # single word opts don't need the double quoting.
-elsif ( $RSYNCOPTS !~ /-/ ) {
-  FATAL("You didn't have a '-' in your '--ro' string. 
+elsif ( $RSYNCOPTS !~ /^-/ ) {
+  FATAL("You didn't have a leading '-' in your '--ro' string. 
   You need to supply the options exactly as you would with rsync, with 
   leading '-' or '--'. Try again..");
 } else {    # if def $RSYNCOPTS, then user takes all responsibility
@@ -397,7 +402,7 @@ elsif ( $RSYNCOPTS !~ /-/ ) {
     );
   }
 }
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 ##: ARGV processing
 # this takes care of the last ARGV so that all the rest of the words are target dirs&files
 #$TARGET = $ARGV[$#ARGV];    # remote rsync target
@@ -406,6 +411,7 @@ if ( !defined $TARGET ) {
 }
 $#ARGV--;
 
+#print __LINE__, " : here.\n"; pause();
 
 if (!$SKIPFPART && $NP < 4 ) { 
   WARN("The --NP value is only [$NP]; to take advantage of pfp2, this should be 
@@ -458,6 +464,7 @@ $defREMOTEPATH = $pod_remotepath; # integration hack for now.
 ##: Hostlist processing
 my $chckd_rec = ""; # string to which rec hosts already checked have been appended to prevent double checking
 #print __LINE__, ": HOSTLIST = [$HOSTLIST]\n";
+#print __LINE__, " : here.\n"; pause();
 
 if ( defined $HOSTLIST ) { # from --hosts=$HOSTLIST, should never be processed by the SEND hosts.
   $MULTIHOST = 1;
@@ -487,11 +494,10 @@ if ( defined $HOSTLIST ) { # from --hosts=$HOSTLIST, should never be processed b
   # split the hostlist into an array and then process into co-indexed send and rec hosts
   # "s1=r1:/path1,s2=r2:/path2,s3=r3:/path3,s4=r4 s5=r5"
   $N = @A = split( /,/, $HOSTLIST );
-# print __LINE__, " : SEND,REC hosts = [@A]\n";
 
   my $rhosts = "";
   my ( $checkcmd, $checkout );
-
+  if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
   # if no '~/.pfp-hostchecked' file, warn that you should run with --checkhost at least once 
   # to sync utils. Place out of tree to avoid being deleted at each re-run.
   if (! -e "$HOME/.pfp-hostchecked" && !defined $CHECKHOST ) {
@@ -584,9 +590,10 @@ if ( defined $HOSTLIST && $DISPOSE ne 'l' ) {
   when using the Multihost function.  --dispose has been set to 'l'");
   $DISPOSE = 'l';
 }
+#print __LINE__, " : here.\n"; pause();
 
 my ( $nbr_ifs, $rtd_ifs );
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 # this is where the initial NETIF determination is extracted.
 # the multihost (--hosts) stanza is further below
 # this stanza is only looking at the $TARGET value to decide what to do
@@ -610,7 +617,6 @@ if ( !defined $NETIF || $NETIF eq "" ) {
     $myIP = `ifconfig $NETIF | grep 'inet ' | awk '{print \$2}'`;  chomp $myIP;
   } else {    #  Linux stanza
     # this is using  $TARGET to both args 2 & 4 of parse_rsync_target(), processing them a bit differently
-    # print __LINE__, " : TARGET = [$TARGET]\n";
     if ($rat_hoststring eq "") {
       ($rem_user, $rem_host, $rsync_type, $rem_fqpath, $rem_homepath, $RSYNCMODULE, $pod_remotepath,
       $rat_hoststring ) = parse_rsync_target($USER, $TARGET, $ALTCACHE,'');  
@@ -619,17 +625,19 @@ if ( !defined $NETIF || $NETIF eq "" ) {
     my ( $nrd, @rd, $nrdu, @rdu );
     # may have to re-assign some var names to smooth things later on..
     $rUSER = $rem_user;
-    $rHOSTNAME = $rem_host;
+    $rHOSTNAME = $rem_host; # needed anymore??
     $defREMOTEPATH = $rem_fqpath;
     
-     if ( $rHOSTNAME eq "filesystem" ) {
+     if ( $rsync_type eq "filesystem" ) {
        WARN("parsyncfp2 does not work well across mounted filesystems (it's a NETWORK 
-  protocol), so I'll honor your request but this will be very slow. There are
-  long explanations why this is the case on the intertubes, especially on the 
-  rsync discussion list.");
+  protocol), so I'll honor your request but this will be fairly slow and the 
+  transfer bandwidth will be inaccurate or unavailable. 
+  There are long explanations why this is the case on the intertubes, 
+  especially on the rsync discussion list.");
+      sleep 2;
      }
     
-    if ( $rHOSTNAME ne "filesystem" ) {
+    if ( $rsync_type !~ /filesystem/ ) {
       # next line works on any non-local host, but if the master is also using itself
       # as a slave then it will fail due to a different output format depending on
       # whether it's local or 'via' the router.
@@ -641,6 +649,7 @@ if ( !defined $NETIF || $NETIF eq "" ) {
       if ( $iproute =~ /^local/ ) {    # localhost situation
         $rHOSTNAME = 'localhost';
       }
+
       my @ipr = split( /\s+/, $iproute );
       if ( $rHOSTNAME =~ 'localhost' ) {
         $NETIF = `ip a | grep ' UP ' | head -1 | scut -f=1 -d=': '`; chomp $NETIF;
@@ -652,6 +661,7 @@ if ( !defined $NETIF || $NETIF eq "" ) {
           # so this next line should generate the routable IP# to the target, regardless of
           # which network it's on.  Thanks Ryan Novosielski for the suggestion.
       $myIP = `ip addr show dev $NETIF | grep 'inet ' | scut -f=2 | sed 's/...\$//'`; chomp $myIP;
+
       if ($DEBUG) { DEBUG( __LINE__,  "NETIF = [$NETIF], myIP = [$myIP]" ); }
     } else {    # guess at the NETIF if there are multiple.
       $rtd_ifs = `ip link show | grep ' UP ' | scut -f=1 --id1=': ' | tr '\n' ' '`; chomp $rtd_ifs;
@@ -661,9 +671,9 @@ if ( !defined $NETIF || $NETIF eq "" ) {
         $NETIF = $rtd_ifs;
       } elsif ( !defined $NETIF ) {
         WARN(
-          "You have >1 active network interface and I can't tell which one 
+          "You have >1 active network interfaces and I can't tell which one 
     you want to monitor.  Next time, please use '--interface' to choose one of:
-    [$rtd_ifs]. I've randomly chosen [$i[0]]."
+    [$rtd_ifs]. I've randomly chosen [$i[0]].\n"
         );
         $NETIF = $i[0];
       }
@@ -687,7 +697,7 @@ if ($RDMA){
     INFO(".. but you don't have 'perfquery' installed, so only TCP bytes will be reported.\n");
   }
 }
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 ##: get IF_SPEED 
 # Need to bring it up to date with the new naming conventions
 # see: https://goo.gl/kDLr8b
@@ -783,12 +793,13 @@ if ( $SKIPFPART == 0 && $SKIPTO == -1) {    # skip this if it's the multihost sl
       or FATAL("Can't make 'FP_HOLD_DIR' [$FP_HOLD_DIR]");
   }
 }
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 ##: process Files & Dirs to send
 $dcnt  = 0;
 $fnd2r = "";                # zero the list of 'files 'n' dirs to rsync'
 # only do this next stanza if NOT taking files from the '$FILESFROM
 # define $fnd2r only if there's no existing $FILESFROM and this is the master (undefined $SKIPFPART)
+
 if ( !defined $FILESFROM && !defined $SKIPFPART ) {
   $dirtmp = shift;    # should only be dir/files left once getopt finishes (see above)
   if ($DEBUG) { DEBUG( __LINE__,  "Composing the new fpart target dirtmp in a loop." ); }
@@ -897,7 +908,7 @@ if ( $OTHERFPRNG ne '' && $SKIPFPART != 1 ) {
   );
   sleep 5;
 }
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 ##: More $FILESFROM proc
 my $x = 0;
 $fnd2r =~ s/^\s+|\s+$//g;    # trim leading and trailing whitespace
@@ -994,6 +1005,7 @@ if ( (defined $SKIPFPART || $SKIPTO >= 0) ) { # && $VERBOSE >= 2  # only actiona
   ## remember, the fpart command should use the fqpn,
   ##: Wait for chunkfiles to appear
 
+  if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
   my $ready2start = my $waitcnt = $NBR_FP_FLES = 0;
   my $fp1         = $FP_ROOT . ".1";  #  1st file is 1, not 0 due to latest fpart mod
   my $done        = 0;
@@ -1110,6 +1122,7 @@ done
     } else { FATAL("Did not find [$UTILITIES[$dd]] on PATH; [@UTILITIES] need to be on the PATH.");}
   }
 }
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 # set pfplg to 'hostless' string, rewritten below if there are POD SEND hosts
 # $pfplog = "${parsync_dir}/pfp-log-${DATE}"; # $pfplog is the copy of the terminal output
 
@@ -1186,7 +1199,7 @@ if ( $MULTIHOST > 0 ) {
     system("$REMOTECMD &");
   }
 }
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 # start up NP rsyncs 1st, then cycle every CHECKPERIOD, checking # of rsyncs still going and
 # starting new ones as needed until the chunkfiles are exhausted.
 
@@ -1281,6 +1294,7 @@ $avgTCPsend = 1; # to start things off.
 $crr = 1; # to let the loop start off
 $rPIDs = "blah"; $sPIDs = ""; # set $rPIDs to trigger entry to the main loop below
 my $WARN_ONCE = 1;
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 
 ##: Start the overall common rsync loop
 my $NBR_FP_FLESa = $NBR_FP_FLES + 2; # used only at the top of this loop, adj at bottom of loop
@@ -1417,7 +1431,7 @@ while ( ( ($CUR_FPI) <= ($NBR_FP_FLES + 1) || !$FPART_IS_DONE ) && !$PFP_DONE  |
             }
             $e++;
           }
-          
+          if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
           #NTS - if do interleaved with the rsyncs, then have to launch this as a bg job, capture PID of the SPLIT_CMD and then only when that PID finishes, process the splits into f.# files.  So it will become more complex: 
           # & echo \"\${!}\" >> $RSYNC_PIDFILE
           # @SPLIT_PIDs is size $BIGFILES (max # of splits to run simultaneously )
@@ -1483,7 +1497,7 @@ while ( ( ($CUR_FPI) <= ($NBR_FP_FLES + 1) || !$FPART_IS_DONE ) && !$PFP_DONE  |
       if ( $VERBOSE == 1 ) { $hdr_pr = 0; }
     } else { $hdr_pr = 0; }
   }
-
+  if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
   # check fpart to see if it's still running..                   HIT
   if (! $FPART_IS_DONE && -e "$FP_ROOT_DIR/FPART_DONE")  { $FPART_IS_DONE = 1; }
   my $rDATE = `date +"%T" | sed 's/:/./g' `; chomp $rDATE;
@@ -1596,7 +1610,8 @@ do this, you may run into the string limit for 'ls'.
   ##: Un/Suspend rsyncs for loadbalancing
   my $tmdiff = time() - $printnow; # so if it's +, it's > 
   if ( $SYSLOAD[0] > $MAXLOAD && time() >= $printnow) { # $SYSLOAD[0] = 1m loadavg; only eval on checkperiods
-
+  if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
+  
 # suspend a PID; then loop as normal. If still high, continue to suspend PIDs til there's none left.
     if ($DEBUG) {
        DEBUG( __LINE__, 
@@ -1683,7 +1698,7 @@ do this, you may run into the string limit for 'ls'.
     # OK to call it just before the test below
     $NBR_FP_FLES = get_nbr_chunk_files( ${FP_ROOT_DIR} );
     if (! $FPART_IS_DONE && -e "$FP_ROOT_DIR/FPART_DONE")  { $FPART_IS_DONE = 1; }
-
+    if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
     ##: Spin up more rsyncs if not enough
     # this test is OK if $R2SU above is calculated correctly (consults # suspended PIDs $NsPIDs)
  
@@ -1780,7 +1795,7 @@ do this, you may run into the string limit for 'ls'.
               # determined to contain zots will apparently be xf v fast the 1st time, then re-xf 
               # at the end.
               #print __LINE__, " : FP_ROOT = [$FP_ROOT]\n"; # exit();
-              
+              if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
               fixfilenames( "${FP_ROOT}.${zf_fp}", $ROOTDIR ); # fix those leading paths..
               my $tgz_cmd = "tar -c --files-from=${FP_ROOT}.${zf_fp} -f - 2> /dev/null | lz4 > ${FP_ROOT_DIR}/tar.lz4.${zf_fp}; echo ${FP_ROOT_DIR}/tar.lz4.${zf_fp} > ${FP_ROOT_DIR}/f.${zf_fp}";
               # print __LINE__, " : LOC_POST_FP_ZOT_CMDS[$tv]  =  [$LOC_POST_FP_ZOT_CMDS[$tv]] 
@@ -1855,7 +1870,9 @@ do this, you may run into the string limit for 'ls'.
         if ( -e $CUR_FP_FLE ) {
           ##: Compose RSYNC_CMD
           fixfilenames( $CUR_FP_FLE, $ROOTDIR );    # check/fix the path to f.# is OK
-                    
+          if ($rsync_type =~ /filesystem/ && $rat_hoststring eq "") {
+            $rat_hoststring = $rem_host; # support FS to FS rsyncs.. 
+          }
           $RSYNC_CMD = qq(cd $TRIMPATH && $UDR rsync  --bwlimit=$MAXBW  $RSYNCOPTS --log-file=$logfile --files-from=$CUR_FP_FLE '$ROOTDIR' $rat_hoststring  & echo \"\${!}\" >> $RSYNC_PIDFILE);
          
           if ($DEBUG) { DEBUG( __LINE__,  "Starting [$RSYNC_CMD]" ); }
@@ -1864,11 +1881,11 @@ do this, you may run into the string limit for 'ls'.
           #print __LINE__, " :[$host] not ready CUR_FPI [$CUR_FPI]\n";
           WARN("Chunk file [$CUR_FP_FLE] isn't ready; skipping..");
         }
-        
+        if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
         if ( -e $CUR_FP_FLE ) { 
           # check/fix the path to f.# is OK
           if ($DEBUG) { DEBUG(__LINE__,  "Starting [$RSYNC_CMD]"); }
-          #print __LINE__,  " : [$host] : Starting [$RSYNC_CMD]\n"; #pause();
+         if ( $VERBOSE > 2 ) { clearline(); print "[$host] : Starting [$RSYNC_CMD]\r"; }
           ##: Start RSYNC_CMD
           system("$RSYNC_CMD");    # captures the bg job PID to PIDfile
           $NrPIDs++;
@@ -1984,7 +2001,7 @@ my $r2ri = 0;
 my $log_seq = $FPSTART;
 my $r_log_root = "${parsync_dir}/rsync-log-${DATE}_" ;
 my $f_fle_root = $FP_ROOT;  
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
 # this loop runs thru all the rsync logs, checking that all of them have correct content
 if ( $SKIPTO == 0 ){   # only do this if we're NOT using --skipto.  May revisit this if it becomes nec
   while ($log_seq < $CUR_FPI){ # should this be '<' not '<='?
@@ -2073,7 +2090,7 @@ if ( $SKIPTO < 0 ) { # only do this if it transferred enough bytes to matter. ie
   $bytefiles = "${parsync_dir}/rsync-log-${DATE}_*";    # use this for a glob base
   $bytesxf = `grep 'bytes  total size' $bytefiles | scut -f=11 | stats --quiet --sum`;
   chomp $bytesxf;
-
+if ($DEBUG) {print __LINE__, " : **DEBUG PROGRESS**\n";}
   ## this should be a function.##
   if ( $bytesxf < 1073741824 ) {                        # if < GB, present as MB
     $rprtnbr = $bytesxf / 1048576;
@@ -2301,7 +2318,8 @@ sub parse_rsync_target ( $$$$ ){
      login/ssh user & can be mass-specified via the POD string)
   ";
   
-  if (($target !~ 'POD::/') && ($target !~ /:/ ) ) 
+#   if (($target !~ 'POD::/') && ($target !~ /:/ ) ) 
+  if (($target !~ 'POD::/') && ($target !~ /:/ ) && ($target !~ '^/') ) # ($target !~ /:/ )
   { 
     FATAL("$usage"); # there's another usage call below.  If problems, check both conditions.
   }
