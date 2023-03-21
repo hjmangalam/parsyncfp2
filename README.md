@@ -72,6 +72,12 @@ Should the above commands not fulfill the requirements or be missing from your s
 
 ## Changes
 
+### 2.57
+- verified that pfp2 now/again works across mounted filesystems, tho probably much slower than
+across networks.
+- added some more debug lines to estimate location of non-pfp2 error messages
+- added a printout of actual rsync commands under VERBOSE=3 for additional debugging.  Maybe limit them to only 5 and then stop?  Not yet..
+
 ### 2.56
 - minor changes, add usability.
 - in Multihost mode, added code for allowing t/csh shells (as well as previous sh-like shells) on SEND hosts (so setting remote RPATHS should work)
