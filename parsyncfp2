@@ -92,7 +92,7 @@ my @argv = @ARGV;
                 # also defines where $CUR_FPI starts 
                 # (fpart now starts at 1, not 0, to support bigfiles)
 $PARSYNCVER  = << "VERSION";
-parsyncfp2 version 2.57 (FS revival)
+parsyncfp2 version 2.571 (FS revival)
 Mar 21, 2023
 by Harry Mangalam <hjmangalam\@gmail.com>
 
@@ -373,10 +373,10 @@ if ( $RSYNCOPTS =~ /-[a-zA-Z]+[vh]/ || $RSYNCOPTS =~ /-[vh]/ ) {
 if ($TARGET =~ /POD/ && defined $RSYNCOPTS && $RSYNCOPTS !~ /^" && $RSYNCOPTS !~ "$/) {
   $RSYNCOPTS = '\'"' . $RSYNCOPTS . '"\'';
 }
-#print __LINE__, " : RSYNCOPTS=[$RSYNCOPTS]\n"; pause();
+# print __LINE__, " : RSYNCOPTS=[$RSYNCOPTS]\n"; #pause();
 
 if ( !defined $RSYNCOPTS ) { $RSYNCOPTS = " -asl "; } # single word opts don't need the double quoting.
-elsif ( $RSYNCOPTS !~ /^-/ ) {
+elsif ( $RSYNCOPTS !~ /^'"-/ && $RSYNCOPTS !~ /^-/) {
   FATAL("You didn't have a leading '-' in your '--ro' string. 
   You need to supply the options exactly as you would with rsync, with 
   leading '-' or '--'. Try again..");
@@ -1949,7 +1949,7 @@ do this, you may run into the string limit for 'ls'.
 #  - you've used the '--bigfiles'option which can require a long startup to 
 #    split the first few big files, or
       
-      if ($VERBOSE >= 2) {
+      if ($VERBOSE >= 2 && $rsync_type !~ /filesystem/) {
         WARN("Bandwidth has been < 0.1MB/s for [$LowBWMax] bandwidth checks, 
   usually due to:
   - a 'mostly sync' operation (which exchanges very little data) or 
@@ -3236,8 +3236,10 @@ set by the name of the target.  It can also be used for non-host-based
 transfers (between mounted filesystems) but the network bandwidth continues
 to be (usually pointlessly) shown.
 
-[NB: Between mounted filesystems, rsync (& therefore pfp2) and will work very 
-poorly for reasons noted on the intertubes.  
+[NB: Between mounted filesystems, rsync (& therefore pfp2) and will work 
+poorly for reasons noted on the intertubes. That said, across 2 same-host-
+mounted GPFS parallel filesystems, I see asymptotic increases in speed to 
+about NP=12 vs a single rsync.  From ~30m for 1 rsync to ~6m for 12. YMMV.
 
 pfp2 only works on dirs and files that originate from the current dir (or
 specified via "--startdir").  You cannot include dirs and files from

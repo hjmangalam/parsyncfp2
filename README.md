@@ -72,10 +72,15 @@ Should the above commands not fulfill the requirements or be missing from your s
 
 ## Changes
 
+### 2.571
+- fixed the zombie --ro problem (again) that refuses to die 
+- added surprising stats from GPFS to GPFS rsyncs. (~6x speedup over single rsync iwth --NP=12)
+
 ### 2.57
-- verified that pfp2 now/again works across mounted filesystems, tho probably much slower than
-across networks.
+- verified that pfp2 now/again works across mounted filesystems, tho (probably) much slower than
+across networks. Still, it increases speed of rsyncs across (parallel) FSs significantly. 
 - added some more debug lines to estimate location of non-pfp2 error messages
+- fixed the zombie --ro problem (again) that refuses to die 
 - added a printout of actual rsync commands under VERBOSE=3 for additional debugging.  Maybe limit them to only 5 and then stop?  Not yet..
 
 ### 2.56
