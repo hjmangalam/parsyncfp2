@@ -72,6 +72,16 @@ Should the above commands not fulfill the requirements or be missing from your s
 
 ## Changes
 
+### 2.59
+- found and corrected the lagging print routines after launching the last rsyncs. via ..
+- rearranging the data print routine as a sub, tighten up the timing and calculations; 
+  moved some vars to our(vars); points to better ways of rearranging a lot of vars for this 
+  and other libs.
+- added a few more fpart/rsync overrun/collision detection stuff
+- increase the number of BW checks before the WARN to prevent spamming the screen on startup, 
+  when there will usually be a delay before fpart produces enough usable chunks.
+
+
 ### 2.571
 - fixed the zombie --ro problem (again) that refuses to die 
 - added surprising stats from GPFS to GPFS rsyncs. (~6x speedup over single rsync iwth --NP=12)
