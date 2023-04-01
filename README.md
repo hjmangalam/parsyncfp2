@@ -72,6 +72,9 @@ Should the above commands not fulfill the requirements or be missing from your s
 
 ## Changes
 
+### stats
+- no change to pfp2, but added sample size estimation to stats.
+
 ### 2.59
 - found and corrected the lagging print routines after launching the last rsyncs. via ..
 - rearranging the data print routine as a sub, tighten up the timing and calculations; 

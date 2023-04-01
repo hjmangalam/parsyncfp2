@@ -1,11 +1,14 @@
 #!/usr/bin/env perl
 # by Harry Mangalam, hjmangalam@gmail.com.com.
 
+
 # after significant changes, update the tarballs that need it and cp to moo for distribution; update the scut github
 # export filename="/home/hjm/bin/stats"; scp ${filename} moo:~/public_html; scp ${filename} moo:~/bin;  scp ${filename} bridgit:~/bin; ssh bridgit 'scp ~/bin/stats hmangala@hpc12:~/bin'
 
 # cd ~/gits/scut; cp ~/bin/stats .; git add stats; git commit -m 'commit message'; git push
 # TODO add QQ plot to test for normality?
+# [DONE] add required sample size estimate  - see:
+# https://sphweb.bumc.bu.edu/otlt/mph-modules/bs/bs704_power/bs704_power_print.html
 use strict;
 use Getopt::Long;
 
@@ -17,12 +20,12 @@ use vars qw( $wide $dist $Xsize $Ysize $ln $N $sum $Min $Max $XYDist @Data $page
     %xfhash $xf $id $od $raw $QUANTILE $cutindex $cutvalue @QUANT $QUANTSTR
     $ONLY $pSUM $pNUM $pMEAN $pMEDIAN $pMODE $pNMODES $pMIN $pMAX $pRANGE $pVAR
     $pSD $pSEM $p95C $pSKEW $pSTDSKEW $pKURTOSIS $pQUANTILE $pQindex $PopKurtosis
-    $pPopKURTOSIS @pr %OUT $MINLIMIT $MAXLIMIT $CAPTURE %ConfMult $pCONF $CONFINT 
-    $pConfindex
+    $pPopKURTOSIS $pSAMPLE @pr %OUT $MINLIMIT $MAXLIMIT $CAPTURE %ConfMult $pCONF $CONFINT 
+    $pConfindex $MOE $SampleSz $ALL $PVER
 );
     
-$VERSION = "2.1.3 Rain, rain, rain"; # adds missing raw output to $ONLY outputs
-$DATE = "Jan 5, 2023"; 
+$VERSION = "2.1.4 April Fool"; # adds sample size estimation
+$DATE = "Apr 1, 2023"; 
 $ONLY = 0; # def if want specific outputs ONLY
 if (!defined $ENV{'PAGER'}) {$pager = "less";};
 $gfmt = 1;
@@ -34,6 +37,7 @@ $MINLIMIT = -1e32;
 $MAXLIMIT = 1e32;
 $CAPTURE = 0;
 $dist=0; # no plot is default
+$ALL = 0; # by default print nothing.
 
 %xfhash = (
   'log10'  => 1,  'ln'     => 1,  'sqrt'   => 1,  'x^2'    => 1,  'x^3'    => 1,
@@ -47,8 +51,10 @@ $dist=0; # no plot is default
 );
 
 &GetOptions(
+   "all!"    => \$ALL,   # print everything, or as much as possible
    "wide!"   => \$wide,  # no args - just set to 1
    "dist=i"  => \$dist,  # 1 for 1-liner, 2 for xy plot with the following vars, 3 for both
+   "version!"=> \$PVER,  # print version and die
    "x=i"     => \$Xsize, # the # of characters in the X axis
    "y=i"     => \$Ysize, # the # of lines in the Y axis
    "help!"   => \$HELP,  # ask for help
@@ -64,7 +70,8 @@ $dist=0; # no plot is default
    "minlimit=i" => \$MINLIMIT, # filter values < this
    "maxlimit=i" => \$MAXLIMIT, # filter values > this
    "quantile=i" => \$QUANTILE, # number of quantiles to calculate
-   "conf=s"   => \$CONFINT, # confidence interval 
+   "conf=s"   => \$CONFINT, # confidence interval, default 95%, as below
+   "sample=s" => \$MOE,    # estimated Margin Of Error for expt.
    "capture!" => \$CAPTURE, # capture filtered values in './stats.capture', overwritten each time
    "sum!"     => \$pSUM,    # for printSUM, etc 
    "num!"     => \$pNUM,    #
@@ -86,6 +93,9 @@ $dist=0; # no plot is default
    "qq!"      => \$pQUANTILE,   # quantile
    );
 
+
+if ($PVER) {print "Version $VERSION, last modified $DATE";}
+if ($wide) {$ALL = 1;}   
 if (defined $CONFINT) {
     $CONFINT = trim($CONFINT); $CONFINT =~ tr/%//d;
     $pCONF = 1; # if define it, want to print it.
@@ -94,6 +104,12 @@ if (defined $CONFINT) {
         Supported values are 80, 85, 90, 95, 99, 99.5, 99.9");
     }
 } else { $CONFINT = "95";}
+
+if (defined $MOE) { # can be any number like string.
+    if ($MOE !~ /\d+(\.\d+)?/) { 
+     print "The Margin Of Error value [$MOE] you gave for --sample doesn't look like a number to me.  Try again?\n"; exit; 
+    } else {$pSAMPLE = 1;}
+}
 
 if (defined $QUANTILE) {$pQUANTILE = 1;} # if define, want to print it.
 # then run thru the array els and incr $ONLY for each key.
@@ -114,6 +130,7 @@ if ($pSKEW){$pr[$ONLY++] = "Skew";}
 if ($pSTDSKEW){$pr[$ONLY++] = "Std_Skew";} 
 if ($pKURTOSIS){$pr[$ONLY++] = "Kurtosis";}
 if ($pPopKURTOSIS){$pr[$ONLY++] = "PopKurt";}
+if ($pSAMPLE){ $pr[$ONLY++] = "SampleSz";}  
 if ($pQUANTILE){$pQindex = $ONLY; $pr[$ONLY++] = "Quantiles";}
 # $ONLY is now pointing past the end of the array
 if ($CAPTURE) {open (CAP, "> ./stats.exceptions") or die "Can't open filter file [./stats.filtered]"; }
@@ -133,7 +150,7 @@ if ($raw) { $gfmt = 0; } # set to print raw, NOT in perl native format
 # 05.01.08 added comma removal after embarrassing conversation with credit card company
 #  7.14.06 add --sci to format for scientific notation output. ie:
 #  --sci
-#  2.05.01 addded Distribution calc/graph
+#  2.05.01 added Distribution calc/graph
 #  2.01.01 format change to ease integration (Mode, NMode# split onto separate lines)
 #         Made Labels single words and unambiguous for easier grepping
 
@@ -144,6 +161,7 @@ if ($raw) { $gfmt = 0; } # set to print raw, NOT in perl native format
 $N = 0;
 $sum = 0;
 $Min = $Max = 0;
+
 
 # handle input and offer help if none.
 if (-t STDIN) {
@@ -292,7 +310,6 @@ if (! $stdout) {
                 $Dist[$J]++;  # range of Dist should be close to $Xsize
         } #else {print "\nErr: All #s same, no range, no distribution\n";}
     }
-#vvvvvvvvv Don't include in golang version vvvvvvv
     #Scale the Y axis; 1st find out the range for Y
     $YMax = 0;
     for (my $i=0; $i<$jmax; $i++) {
@@ -306,7 +323,6 @@ if (! $stdout) {
         my $y = int($Dist[$x] * $YMul);
         $XYDist[$x][$y] = '*';
     }
-#^^^^^^^^^^^^ Don't include in golang version ^^^^^^^^^^^^
 
     ## Calc Quantiles
     # not providing min/max values since they're already printed
@@ -315,45 +331,49 @@ if (! $stdout) {
         $QUANTSTR = "";
         $cutindex = 0;
         for (my $q=1; $q<$QUANTILE; $q++) {
-        my $inc = int(($N * ($q/$QUANTILE))+1); #print "inc = [$inc]\n";
-            $cutindex = $inc - 1;   
+        my $inc = int(($N * ($q/$QUANTILE)) + 1); 
+            $cutindex = $inc - 1; #   
             my $cutvalue =  $SData[$cutindex];
             $QUANT[$q][0] = $cutindex; $QUANT[$q][1] = $cutvalue; 
             $QUANTSTR .= "$q\t$cutindex\t$cutvalue\n";
         }
     }
     
-        if ($MaxSoFarValCnt > 1) {
-            $ModeNum = $MaxSoFarValCnt + 1;
-            $Mode = $SData[$ModeInd];
-        } else {
-            $ModeNum = "No # was represented more than once";
-            $Mode = "FLAT";
-        } 
-        # set up the @OUT hash
-        $OUT{"Sum"} = $sum;
-        $OUT{"Number"} = $N;
-        $OUT{"Mean"} = $Mean;
-        $OUT{"Median"} = $Median;
-        $OUT{"Mode"} = $Mode;
-        $OUT{"NModes"} = $ModeNum;
-        $OUT{"Min"} = $Min;
-        $OUT{"Max"} = $Max;
-        $OUT{"Range"} = $XRange;
-        $OUT{"Variance"} = $S2 = $SumDiffs2 / ($N - 1);
-        $OUT{"Std_Dev"} = $S = sqrt($S2);
-        ## Check this formula (this looks like it's normalized to 0; should be 3
-        ## and also add the population-normalized Kurtosis  Or not..?  Kurtosis is 
-        ## a pretty useless measure.
-        $OUT{"SEM"} = $SEM = $S / sqrt($N);
-        if ($S > 0 && $N > 3) {
+    if ($MaxSoFarValCnt > 1) {
+        $ModeNum = $MaxSoFarValCnt + 1;
+        $Mode = $SData[$ModeInd];
+    } else {
+        $ModeNum = "No # was represented more than once";
+        $Mode = "FLAT";
+    } 
+    # set up the @OUT hash
+    $OUT{"Sum"} = $sum;
+    $OUT{"Number"} = $N;
+    $OUT{"Mean"} = $Mean;
+    $OUT{"Median"} = $Median;
+    $OUT{"Mode"} = $Mode;
+    $OUT{"NModes"} = $ModeNum;
+    $OUT{"Min"} = $Min;
+    $OUT{"Max"} = $Max;
+    $OUT{"Range"} = $XRange;
+    $OUT{"Variance"} = $S2 = $SumDiffs2 / ($N - 1);
+    $OUT{"Std_Dev"} = $S = sqrt($S2);
+    ## Check this formula (this looks like it's normalized to 0; should be 3
+    ## and also add the population-normalized Kurtosis  Or not..?  Kurtosis is 
+    ## a pretty useless measure.
+    $OUT{"SEM"} = $SEM = $S / sqrt($N);
+    if ($S > 0 && $N > 3) {
         $OUT{"Skew"} = $Skew = ($N * $SumDiffs3) / (($N-1) * ($N-2) * ($S ** 3));
         $OUT{"Std_Skew"} = $StdSkew = $Skew / sqrt(6/$N);
         $ConfIntHi  = $Mean + ($ConfMult{$CONFINT} * ($S/sqrt($N)));
         $ConfIntLow = $Mean - ($ConfMult{$CONFINT} * ($S/sqrt($N)));
         $OUT{"Conf_Int"} = sprintf("%g:%g",$ConfIntLow,$ConfIntHi);
         $OUT{"Quantiles"} = $QUANTSTR;
-        }
+        if (defined $MOE) { # calc and round up by one.
+            $SampleSz = int (((($ConfMult{$CONFINT} * $S) / $MOE)**2) + 1.49999999);
+        } else { undef $SampleSz; } # $SampleSz = '';
+        $OUT{"SampleSz"} = $SampleSz;
+    }
         
     # only try to calculate this if $XMul > 0 (otherwise div by zero)
     if ($XMul > 0) {
@@ -363,9 +383,8 @@ if (! $stdout) {
           $OUT{"PopKurt"} = $PopKurtosis = ($N * ($N+1)) / (($N-1) * ($N-2) * ($N-3)) * $Kurtosis - ((3*($N-1)^2) / (($N-2) * ($N-3)));
         } else {$OUT{"PopKurt"} = "UNDEF";}
      }   
-
-
-    if (!$ONLY && !$wide && $gfmt == 0) {  # don't include in golang version
+    
+    if (($ALL || !$ONLY) && !$wide && $gfmt == 0) {  # don't include in golang version
     print  "Sum       $sum",
             "\nNumber    $N",
             "\nMean      $Mean",
@@ -381,7 +400,7 @@ if (! $stdout) {
             "\n${CONFINT}% Conf  $ConfIntLow to $ConfIntHi",
             "\n          [for a normal distribution (ND) - see Skew & Kurtosis]",
             "\nQuantiles ($QUANTILE)\n\tIndex\tValue\n$QUANTSTR";
-    } elsif (!$ONLY && !$wide && $gfmt > 0) {  # shorten this post verify
+    } elsif (($ALL || !$ONLY) && !$wide && $gfmt > 0) {
     printf   "Sum       %g",$sum;
     printf "\nNumber    %g",$N;
     printf "\nMean      %g",$Mean;
@@ -398,7 +417,7 @@ if (! $stdout) {
     print  "\n          [for a normal distribution (ND) - see skew]";
     print  "\nQuantiles ($QUANTILE)\n\tIndex\tValue\n$QUANTSTR";
     }
-    if (!$ONLY && $S > 0 && $N > 3 && !$wide) {
+    if (($ALL || !$ONLY) && $S > 0 && $N > 3 && !$wide) {
         if (!$gfmt) {
             print  "Skew      $Skew",
                 "\n          [Skew=0 for a symmetric dist]",
@@ -406,7 +425,10 @@ if (! $stdout) {
                 "\nKurtosis  $Kurtosis",
                 "\n          [Kurtosis=3 for a normal dist (ND)]",
                 "\nPopKurt   $PopKurtosis",
-                "\n          [Pop'n Kurtosis is normalized to sample size; PK=0 for a ND]\n"
+                "\n          [Pop'n Kurtosis is normalized to sample size; PK=0 for a ND]";
+            if (defined $MOE ) { # && $ONLY == 1
+                print "\nSampleSz  $SampleSz\n";
+            } else {print "\n";}              
         } else {
             printf   "Skew      %g", $Skew;
             print  "\n          [Skew=0 for a symmetric dist]";
@@ -414,26 +436,30 @@ if (! $stdout) {
             printf "\nKurtosis  %g", $Kurtosis;
             print  "\n          [Kurtosis=3 for a ND]";
             printf "\nPopKurt   %g", $PopKurtosis;
-            print  "\n          [Pop'n Kurtosis is normalized to sample size; PK=0 for a ND]\n"
+            print  "\n          [Pop'n Kurtosis is normalized to sample size; PK=0 for a ND]";
+            if (defined $MOE) {
+            printf "\nSampleSz  %g\n", $SampleSz;
+            } else {print "\n" ;}
         }
+        
     } elsif (!$ONLY && !$QUIET) {
         print STDERR "(stats): #Std Dev = 0 or N <=3 or printing wide; Skipping all Skewness & Kurtosis cal'ns.\n";
     }
-
-    if (!$ONLY && $wide) {
+    if (($ALL || !$ONLY) && $wide) {
         if (!$NWH){
             print  "# (Quantiles not printed in wide mode.)
-    #Sum\tN\tMean\tMedian\tMode\tNModes\tMin\tMax\tRange\tVariance\tStd_Dev\tSEM\t95%L\t95%H\tSkew\tStd_Skew\tKurtosis\n";
+#Sum\tN\tMean\tMedian\tMode\tNModes\tMin\tMax\tRange\tVariance\tStd_Dev\tSEM\t95%L\t95%H\tSkew\tStd_Skew\tKurtosis\tSampleSz\n";
         }
         if ($gfmt) {
             printf "%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g\t%g", $sum,$N,$Mean,$Median,$Mode,$ModeNum,$Min,$Max,$XRange,$S2,$S,$SEM,$ConfIntLow,$ConfIntHi;
         } else {
             print "$sum\t$N\t$Mean\t$Median\t$Mode\t$ModeNum\t$Min\t$Max\t$XRange\t$S2\t$S\t$SEM\t$ConfIntLow\t$ConfIntHi";
         }
+
         if ($S > 0 && $N > 3) {
             if ($gfmt) {
-                printf "\t%g\t%g\t%g\t%g\n", $Skew,$StdSkew,$Kurtosis,$PopKurtosis;
-            } else { print "\t$Skew\t$StdSkew\t$Kurtosis\t$PopKurtosis\n";}
+                printf "\t%g\t%g\t%g\t%g\t%g\n", $Skew,$StdSkew,$Kurtosis,$PopKurtosis,$SampleSz;
+            } else { print "\t$Skew\t$StdSkew\t$Kurtosis\t$PopKurtosis\t$SampleSz\n";}
         } elsif (! $QUIET) {
             print  STDERR "(stats): NA\tNA\nStd Dev = 0 or N <=3; Skipping all Skewness & Kurtosis cal'ns.\n";
         }
@@ -448,14 +474,17 @@ if (! $stdout) {
         }
     }
     # if used only 1 option, print out the single number requested
-    if ($ONLY == 1) {
+    #print __LINE__, " : ONLY=[$ONLY], MOE=[$MOE]\n";
+    if ($ONLY == 1) { 
         if ($pQUANTILE) {
             printf "Quant\tIndex\tValue\n%s", $OUT{$pr[0]};
         } elsif ($pCONF) {
              printf "%s%s",$OUT{$pr[0]},$od; 
         } else {
-            if ($gfmt) { printf "%g\n",$OUT{$pr[0]}; }
-            else {       printf "%d\n",$OUT{$pr[0]}; } # raw
+            if ( ($ALL == 0 && $MOE > 0) || !defined $MOE) {
+               if ($gfmt) { printf "%g\n",$OUT{$pr[0]}; }
+                else {       printf "%d\n",$OUT{$pr[0]}; } # raw
+            }
         }
     } elsif ($ONLY > 1) {
         print "#";
@@ -472,7 +501,6 @@ if (! $stdout) {
             }
         } print "\n";
     }
-    
     # if used selective options, print out the selected bits
     # omit from golang version
     # this way prints a little xy graph, if wanted
@@ -517,7 +545,7 @@ my $LESSHELP = <<HELP;
  be separated by whitespace), calculates some basic stats, then spits 
  them to STDOUT.  Starting from this version, the default is to format the 
  test in Perl's General Numeric Format (gfmt), altho you can ask for the raw
- output with '--raw'.
+ output with '--raw'.  
  
  New in 2.0.8, you can ask for specific output with the options listed below.  
  If you ask for a single output '--sum', it will be emitted as a single, 
@@ -537,6 +565,8 @@ my $LESSHELP = <<HELP;
  cmd1 | cmd2 |cmd3 | stats [options]
 
  where Options are:
+       -all ................. print all the variables; either this or a 
+                              specific statistic is required for output
        --help .......................................   dumps this help
        --nwh ...... 'No Wide Headers' (no headers on wide output output
                         good for repeating output as for logging stuff)
@@ -550,7 +580,7 @@ my $LESSHELP = <<HELP;
        --od="token" ........... Output delimiter; defaults to tab (\\t)
        --minlimit=# .............. sets a MINIMUM limit to filter input
        --maxlimit=# .............. sets a MAXIMUM limit to filter input
-                                      above 2 line also set the filters
+                                    above 2 lines also set the filters
                                    for the transforms (--xf, see above)
        --capture ...... captures the exceptions from the above 2 limits
                                   to file 'stats.exceptions' in the cwd
@@ -558,6 +588,12 @@ my $LESSHELP = <<HELP;
                of 80, 85, 90, 95, 99, 99.5, or 99.9.  If the confidence 
              interval is smaller, the range of values will of course be 
                  be larger. Assumes normal distribution - see warnings.
+       --sample=# ....... returns the sample size to reach significance 
+             set by '--conf' (above) when given a Margin Of Error (MOE)
+        requirement, given the input data set as a population estimate.
+          This means: if the input data is representative of the sample 
+           population, at a the given confidence interval & the MOE you
+                 give, it will return the minimum sample size required.
        --gfmt ............. output in Perl's 'general numeric notation'
                                                           (now default)
        --raw ............................... unformatted numeric output
@@ -569,7 +605,8 @@ my $LESSHELP = <<HELP;
                           # = 1 = 1-liner distribution
                               2 = the std xy plot of the data
                               3 = both 1 liner & longer version
-         (hint: pipe '--stdout' into 'feedgnuplot' for better plotting)
+                      Strong advice: pipe '--stdout' into 'feedgnuplot' 
+                                              for much better plotting)
        --x=# ..................where # = an integer indicating the # of
                                                characters in the X axis
        --y=# ..................................... ditto for the y axis
@@ -603,6 +640,7 @@ my $LESSHELP = <<HELP;
                               and the value of the array at that index.
                      The quantile output can't easily be put in 1 line,
                      so it spills over into multiple lines.
+       --sample=# ..................... see above for what this returns
 
 Performance isn't stellar - it's Perl.  A rough estimate is about 128K
 integers / sec with about 180bytes per integer RAM usage on a Thinkpad
@@ -638,7 +676,7 @@ Example 4:
 =======================================================================
 Calculate the file size distribution in the current directory:
 
-\$ ls -l | awk '{print \$5}'  | stats  --dist=2 --x=20 --y=10
+\$ ls -l | awk '{print \$5}'  | stats  --all --dist=2 --x=20 --y=10
 Number    401
 Mean      1.10608e+07
 Median    10642
