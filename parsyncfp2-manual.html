@@ -1,0 +1,1822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="generator" content="AsciiDoc 10.1.2">
+<title>parsyncfp2, a MultiHost parallel rsync wrapper</title>
+<style type="text/css">
+/* Shared CSS for AsciiDoc xhtml11 and html5 backends */
+
+/* Default font. */
+body {
+  font-family: Georgia,serif;
+}
+
+/* Title font. */
+h1, h2, h3, h4, h5, h6,
+div.title, caption.title,
+thead, p.table.header,
+#toctitle,
+#author, #revnumber, #revdate, #revremark,
+#footer {
+  font-family: Arial,Helvetica,sans-serif;
+}
+
+body {
+  margin: 1em 5% 1em 5%;
+}
+
+a {
+  color: blue;
+  text-decoration: underline;
+}
+a:visited {
+  color: fuchsia;
+}
+
+em {
+  font-style: italic;
+  color: navy;
+}
+
+strong {
+  font-weight: bold;
+  color: #083194;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #527bbd;
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+h1, h2, h3 {
+  border-bottom: 2px solid silver;
+}
+h2 {
+  padding-top: 0.5em;
+}
+h3 {
+  float: left;
+}
+h3 + * {
+  clear: left;
+}
+h5 {
+  font-size: 1.0em;
+}
+
+div.sectionbody {
+  margin-left: 0;
+}
+
+hr {
+  border: 1px solid silver;
+}
+
+p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+ul, ol, li > p {
+  margin-top: 0;
+}
+ul > li     { color: #aaa; }
+ul > li > * { color: black; }
+
+.monospaced, code, pre {
+  font-family: "Courier New", Courier, monospace;
+  font-size: inherit;
+  color: navy;
+  padding: 0;
+  margin: 0;
+}
+pre {
+  white-space: pre-wrap;
+}
+
+#author {
+  color: #527bbd;
+  font-weight: bold;
+  font-size: 1.1em;
+}
+#email {
+}
+#revnumber, #revdate, #revremark {
+}
+
+#footer {
+  font-size: small;
+  border-top: 2px solid silver;
+  padding-top: 0.5em;
+  margin-top: 4.0em;
+}
+#footer-text {
+  float: left;
+  padding-bottom: 0.5em;
+}
+#footer-badges {
+  float: right;
+  padding-bottom: 0.5em;
+}
+
+#preamble {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+div.imageblock, div.exampleblock, div.verseblock,
+div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
+div.admonitionblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+div.admonitionblock {
+  margin-top: 2.0em;
+  margin-bottom: 2.0em;
+  margin-right: 10%;
+  color: #606060;
+}
+
+div.content { /* Block element content. */
+  padding: 0;
+}
+
+/* Block element titles. */
+div.title, caption.title {
+  color: #527bbd;
+  font-weight: bold;
+  text-align: left;
+  margin-top: 1.0em;
+  margin-bottom: 0.5em;
+}
+div.title + * {
+  margin-top: 0;
+}
+
+td div.title:first-child {
+  margin-top: 0.0em;
+}
+div.content div.title:first-child {
+  margin-top: 0.0em;
+}
+div.content + div.title {
+  margin-top: 0.0em;
+}
+
+div.sidebarblock > div.content {
+  background: #ffffee;
+  border: 1px solid #dddddd;
+  border-left: 4px solid #f0f0f0;
+  padding: 0.5em;
+}
+
+div.listingblock > div.content {
+  border: 1px solid #dddddd;
+  border-left: 5px solid #f0f0f0;
+  background: #f8f8f8;
+  padding: 0.5em;
+}
+
+div.quoteblock, div.verseblock {
+  padding-left: 1.0em;
+  margin-left: 1.0em;
+  margin-right: 10%;
+  border-left: 5px solid #f0f0f0;
+  color: #888;
+}
+
+div.quoteblock > div.attribution {
+  padding-top: 0.5em;
+  text-align: right;
+}
+
+div.verseblock > pre.content {
+  font-family: inherit;
+  font-size: inherit;
+}
+div.verseblock > div.attribution {
+  padding-top: 0.75em;
+  text-align: left;
+}
+/* DEPRECATED: Pre version 8.2.7 verse style literal block. */
+div.verseblock + div.attribution {
+  text-align: left;
+}
+
+div.admonitionblock .icon {
+  vertical-align: top;
+  font-size: 1.1em;
+  font-weight: bold;
+  text-decoration: underline;
+  color: #527bbd;
+  padding-right: 0.5em;
+}
+div.admonitionblock td.content {
+  padding-left: 0.5em;
+  border-left: 3px solid #dddddd;
+}
+
+div.exampleblock > div.content {
+  border-left: 3px solid #dddddd;
+  padding-left: 0.5em;
+}
+
+div.imageblock div.content { padding-left: 0; }
+span.image img { border-style: none; vertical-align: text-bottom; }
+a.image:visited { color: white; }
+
+dl {
+  margin-top: 0.8em;
+  margin-bottom: 0.8em;
+}
+dt {
+  margin-top: 0.5em;
+  margin-bottom: 0;
+  font-style: normal;
+  color: navy;
+}
+dd > *:first-child {
+  margin-top: 0.1em;
+}
+
+ul, ol {
+    list-style-position: outside;
+}
+ol.arabic {
+  list-style-type: decimal;
+}
+ol.loweralpha {
+  list-style-type: lower-alpha;
+}
+ol.upperalpha {
+  list-style-type: upper-alpha;
+}
+ol.lowerroman {
+  list-style-type: lower-roman;
+}
+ol.upperroman {
+  list-style-type: upper-roman;
+}
+
+div.compact ul, div.compact ol,
+div.compact p, div.compact p,
+div.compact div, div.compact div {
+  margin-top: 0.1em;
+  margin-bottom: 0.1em;
+}
+
+tfoot {
+  font-weight: bold;
+}
+td > div.verse {
+  white-space: pre;
+}
+
+div.hdlist {
+  margin-top: 0.8em;
+  margin-bottom: 0.8em;
+}
+div.hdlist tr {
+  padding-bottom: 15px;
+}
+dt.hdlist1.strong, td.hdlist1.strong {
+  font-weight: bold;
+}
+td.hdlist1 {
+  vertical-align: top;
+  font-style: normal;
+  padding-right: 0.8em;
+  color: navy;
+}
+td.hdlist2 {
+  vertical-align: top;
+}
+div.hdlist.compact tr {
+  margin: 0;
+  padding-bottom: 0;
+}
+
+.comment {
+  background: yellow;
+}
+
+.footnote, .footnoteref {
+  font-size: 0.8em;
+}
+
+span.footnote, span.footnoteref {
+  vertical-align: super;
+}
+
+#footnotes {
+  margin: 20px 0 20px 0;
+  padding: 7px 0 0 0;
+}
+
+#footnotes div.footnote {
+  margin: 0 0 5px 0;
+}
+
+#footnotes hr {
+  border: none;
+  border-top: 1px solid silver;
+  height: 1px;
+  text-align: left;
+  margin-left: 0;
+  width: 20%;
+  min-width: 100px;
+}
+
+div.colist td {
+  padding-right: 0.5em;
+  padding-bottom: 0.3em;
+  vertical-align: top;
+}
+div.colist td img {
+  margin-top: 0.3em;
+}
+
+@media print {
+  #footer-badges { display: none; }
+}
+
+#toc {
+  margin-bottom: 2.5em;
+}
+
+#toctitle {
+  color: #527bbd;
+  font-size: 1.1em;
+  font-weight: bold;
+  margin-top: 1.0em;
+  margin-bottom: 0.1em;
+}
+
+div.toclevel0, div.toclevel1, div.toclevel2, div.toclevel3, div.toclevel4 {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+div.toclevel2 {
+  margin-left: 2em;
+  font-size: 0.9em;
+}
+div.toclevel3 {
+  margin-left: 4em;
+  font-size: 0.9em;
+}
+div.toclevel4 {
+  margin-left: 6em;
+  font-size: 0.9em;
+}
+
+span.aqua { color: aqua; }
+span.black { color: black; }
+span.blue { color: blue; }
+span.fuchsia { color: fuchsia; }
+span.gray { color: gray; }
+span.green { color: green; }
+span.lime { color: lime; }
+span.maroon { color: maroon; }
+span.navy { color: navy; }
+span.olive { color: olive; }
+span.purple { color: purple; }
+span.red { color: red; }
+span.silver { color: silver; }
+span.teal { color: teal; }
+span.white { color: white; }
+span.yellow { color: yellow; }
+
+span.aqua-background { background: aqua; }
+span.black-background { background: black; }
+span.blue-background { background: blue; }
+span.fuchsia-background { background: fuchsia; }
+span.gray-background { background: gray; }
+span.green-background { background: green; }
+span.lime-background { background: lime; }
+span.maroon-background { background: maroon; }
+span.navy-background { background: navy; }
+span.olive-background { background: olive; }
+span.purple-background { background: purple; }
+span.red-background { background: red; }
+span.silver-background { background: silver; }
+span.teal-background { background: teal; }
+span.white-background { background: white; }
+span.yellow-background { background: yellow; }
+
+span.big { font-size: 2em; }
+span.small { font-size: 0.6em; }
+
+span.underline { text-decoration: underline; }
+span.overline { text-decoration: overline; }
+span.line-through { text-decoration: line-through; }
+
+div.unbreakable { page-break-inside: avoid; }
+
+
+/*
+ * xhtml11 specific
+ *
+ * */
+
+div.tableblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+div.tableblock > table {
+  border: 3px solid #527bbd;
+}
+thead, p.table.header {
+  font-weight: bold;
+  color: #527bbd;
+}
+p.table {
+  margin-top: 0;
+}
+/* Because the table frame attribute is overridden by CSS in most browsers. */
+div.tableblock > table[frame="void"] {
+  border-style: none;
+}
+div.tableblock > table[frame="hsides"] {
+  border-left-style: none;
+  border-right-style: none;
+}
+div.tableblock > table[frame="vsides"] {
+  border-top-style: none;
+  border-bottom-style: none;
+}
+
+
+/*
+ * html5 specific
+ *
+ * */
+
+table.tableblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+thead, p.tableblock.header {
+  font-weight: bold;
+  color: #527bbd;
+}
+p.tableblock {
+  margin-top: 0;
+}
+table.tableblock {
+  border-width: 3px;
+  border-spacing: 0px;
+  border-style: solid;
+  border-color: #527bbd;
+  border-collapse: collapse;
+}
+th.tableblock, td.tableblock {
+  border-width: 1px;
+  padding: 4px;
+  border-style: solid;
+  border-color: #527bbd;
+}
+
+table.tableblock.frame-topbot {
+  border-left-style: hidden;
+  border-right-style: hidden;
+}
+table.tableblock.frame-sides {
+  border-top-style: hidden;
+  border-bottom-style: hidden;
+}
+table.tableblock.frame-none {
+  border-style: hidden;
+}
+
+th.tableblock.halign-left, td.tableblock.halign-left {
+  text-align: left;
+}
+th.tableblock.halign-center, td.tableblock.halign-center {
+  text-align: center;
+}
+th.tableblock.halign-right, td.tableblock.halign-right {
+  text-align: right;
+}
+
+th.tableblock.valign-top, td.tableblock.valign-top {
+  vertical-align: top;
+}
+th.tableblock.valign-middle, td.tableblock.valign-middle {
+  vertical-align: middle;
+}
+th.tableblock.valign-bottom, td.tableblock.valign-bottom {
+  vertical-align: bottom;
+}
+
+
+/*
+ * manpage specific
+ *
+ * */
+
+body.manpage h1 {
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  border-top: 2px solid silver;
+  border-bottom: 2px solid silver;
+}
+body.manpage h2 {
+  border-style: none;
+}
+body.manpage div.sectionbody {
+  margin-left: 3em;
+}
+
+@media print {
+  body.manpage div#toc { display: none; }
+}
+
+
+@media screen {
+  body {
+    max-width: 50em; /* approximately 80 characters wide */
+    margin-left: 16em;
+  }
+
+  #toc {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 13em;
+    padding: 0.5em;
+    padding-bottom: 1.5em;
+    margin: 0;
+    overflow: auto;
+    border-right: 3px solid #f8f8f8;
+    background-color: white;
+  }
+
+  #toc .toclevel1 {
+    margin-top: 0.5em;
+  }
+
+  #toc .toclevel2 {
+    margin-top: 0.25em;
+    display: list-item;
+    color: #aaaaaa;
+  }
+
+  #toctitle {
+    margin-top: 0.5em;
+  }
+}
+</style>
+<script type="text/javascript">
+/*<![CDATA[*/
+var asciidoc = {  // Namespace.
+
+/////////////////////////////////////////////////////////////////////
+// Table Of Contents generator
+/////////////////////////////////////////////////////////////////////
+
+/* Author: Mihai Bazon, September 2002
+ * http://students.infoiasi.ro/~mishoo
+ *
+ * Table Of Content generator
+ * Version: 0.4
+ *
+ * Feel free to use this script under the terms of the GNU General Public
+ * License, as long as you do not remove or alter this notice.
+ */
+
+ /* modified by Troy D. Hanson, September 2006. License: GPL */
+ /* modified by Stuart Rackham, 2006, 2009. License: GPL */
+
+// toclevels = 1..4.
+toc: function (toclevels) {
+
+  function getText(el) {
+    var text = "";
+    for (var i = el.firstChild; i != null; i = i.nextSibling) {
+      if (i.nodeType == 3 /* Node.TEXT_NODE */) // IE doesn't speak constants.
+        text += i.data;
+      else if (i.firstChild != null)
+        text += getText(i);
+    }
+    return text;
+  }
+
+  function TocEntry(el, text, toclevel) {
+    this.element = el;
+    this.text = text;
+    this.toclevel = toclevel;
+  }
+
+  function tocEntries(el, toclevels) {
+    var result = new Array;
+    var re = new RegExp('[hH]([1-'+(toclevels+1)+'])');
+    // Function that scans the DOM tree for header elements (the DOM2
+    // nodeIterator API would be a better technique but not supported by all
+    // browsers).
+    var iterate = function (el) {
+      for (var i = el.firstChild; i != null; i = i.nextSibling) {
+        if (i.nodeType == 1 /* Node.ELEMENT_NODE */) {
+          var mo = re.exec(i.tagName);
+          if (mo && (i.getAttribute("class") || i.getAttribute("className")) != "float") {
+            result[result.length] = new TocEntry(i, getText(i), mo[1]-1);
+          }
+          iterate(i);
+        }
+      }
+    }
+    iterate(el);
+    return result;
+  }
+
+  var toc = document.getElementById("toc");
+  if (!toc) {
+    return;
+  }
+
+  // Delete existing TOC entries in case we're reloading the TOC.
+  var tocEntriesToRemove = [];
+  var i;
+  for (i = 0; i < toc.childNodes.length; i++) {
+    var entry = toc.childNodes[i];
+    if (entry.nodeName.toLowerCase() == 'div'
+     && entry.getAttribute("class")
+     && entry.getAttribute("class").match(/^toclevel/))
+      tocEntriesToRemove.push(entry);
+  }
+  for (i = 0; i < tocEntriesToRemove.length; i++) {
+    toc.removeChild(tocEntriesToRemove[i]);
+  }
+
+  // Rebuild TOC entries.
+  var entries = tocEntries(document.getElementById("content"), toclevels);
+  for (var i = 0; i < entries.length; ++i) {
+    var entry = entries[i];
+    if (entry.element.id == "")
+      entry.element.id = "_toc_" + i;
+    var a = document.createElement("a");
+    a.href = "#" + entry.element.id;
+    a.appendChild(document.createTextNode(entry.text));
+    var div = document.createElement("div");
+    div.appendChild(a);
+    div.className = "toclevel" + entry.toclevel;
+    toc.appendChild(div);
+  }
+  if (entries.length == 0)
+    toc.parentNode.removeChild(toc);
+},
+
+
+/////////////////////////////////////////////////////////////////////
+// Footnotes generator
+/////////////////////////////////////////////////////////////////////
+
+/* Based on footnote generation code from:
+ * http://www.brandspankingnew.net/archive/2005/07/format_footnote.html
+ */
+
+footnotes: function () {
+  // Delete existing footnote entries in case we're reloading the footnodes.
+  var i;
+  var noteholder = document.getElementById("footnotes");
+  if (!noteholder) {
+    return;
+  }
+  var entriesToRemove = [];
+  for (i = 0; i < noteholder.childNodes.length; i++) {
+    var entry = noteholder.childNodes[i];
+    if (entry.nodeName.toLowerCase() == 'div' && entry.getAttribute("class") == "footnote")
+      entriesToRemove.push(entry);
+  }
+  for (i = 0; i < entriesToRemove.length; i++) {
+    noteholder.removeChild(entriesToRemove[i]);
+  }
+
+  // Rebuild footnote entries.
+  var cont = document.getElementById("content");
+  var spans = cont.getElementsByTagName("span");
+  var refs = {};
+  var n = 0;
+  for (i=0; i<spans.length; i++) {
+    if (spans[i].className == "footnote") {
+      n++;
+      var note = spans[i].getAttribute("data-note");
+      if (!note) {
+        // Use [\s\S] in place of . so multi-line matches work.
+        // Because JavaScript has no s (dotall) regex flag.
+        note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+        spans[i].innerHTML =
+          "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+        spans[i].setAttribute("data-note", note);
+      }
+      noteholder.innerHTML +=
+        "<div class='footnote' id='_footnote_" + n + "'>" +
+        "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
+        n + "</a>. " + note + "</div>";
+      var id =spans[i].getAttribute("id");
+      if (id != null) refs["#"+id] = n;
+    }
+  }
+  if (n == 0)
+    noteholder.parentNode.removeChild(noteholder);
+  else {
+    // Process footnoterefs.
+    for (i=0; i<spans.length; i++) {
+      if (spans[i].className == "footnoteref") {
+        var href = spans[i].getElementsByTagName("a")[0].getAttribute("href");
+        href = href.match(/#.*/)[0];  // Because IE return full URL.
+        n = refs[href];
+        spans[i].innerHTML =
+          "[<a href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+      }
+    }
+  }
+},
+
+install: function(toclevels) {
+  var timerId;
+
+  function reinstall() {
+    asciidoc.footnotes();
+    if (toclevels) {
+      asciidoc.toc(toclevels);
+    }
+  }
+
+  function reinstallAndRemoveTimer() {
+    clearInterval(timerId);
+    reinstall();
+  }
+
+  timerId = setInterval(reinstall, 500);
+  if (document.addEventListener)
+    document.addEventListener("DOMContentLoaded", reinstallAndRemoveTimer, false);
+  else
+    window.onload = reinstallAndRemoveTimer;
+}
+
+}
+asciidoc.install(3);
+/*]]>*/
+</script>
+</head>
+<body class="article">
+<div id="header">
+<h1>parsyncfp2, a MultiHost parallel rsync wrapper</h1>
+<span id="author">Harry Mangalam</span><br>
+<span id="email" class="monospaced">&lt;<a href="mailto:harry.mangalam@uci.edu">harry.mangalam@uci.edu</a>&gt;</span><br>
+<span id="revnumber">version 2.59,</span>
+<span id="revdate">Mar 23, 2023</span>
+<div id="toc">
+  <div id="toctitle">Table of Contents</div>
+  <noscript><p><b>JavaScript must be enabled in your browser to display the table of contents.</b></p></noscript>
+</div>
+</div>
+<div id="content">
+<div class="sect1">
+<h2 id="_preamble">1. Preamble</h2>
+<div class="sectionbody">
+<div class="paragraph"><p><em>parsyncfp2</em> intially started as a one-off bash script and moved to Perl (as <em>parsync</em>) when
+that became too cumbersome.
+I incorporated <a href="https://www.fpart.org/">fpart</a> and it became <em>parsyncfp</em>.
+This MultiHost (MH) version allows it to run over multiple SEND hosts with shared storage to cooperatively
+send data much faster.  Rather than appending yet more acronymic characters to the name, I differentiated it with the major version number, so &#8230; <em>parsyncfp2</em> or <em>pfp2</em>.  In the docs and
+src code, you may still find references to <em>parsync</em>, <em>parsyncfp</em>, as well as various abbriev&#8217;s (why does <em>abbrieviation</em> need one?).</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_introduction">2. Introduction</h2>
+<div class="sectionbody">
+<div class="paragraph"><p><em>parsyncfp2</em> (<em>pfp2</em>) is a Perl script that wraps Andrew Tridgell&#8217;s &amp; Paul Mackerras' miraculous
+<a href="https://en.wikipedia.org/wiki/Rsync">rsync</a> to provide load balancing and parallel operation across
+network connections to substantially increase the amount of data it can send simultaneously.
+<em>pfp2</em> exploits parallel operation to decrease the impact of the <a href="https://en.wikipedia.org/wiki/Round-trip_delay">TCP Round Trip Time(rtt)</a> to significantly increase the total bandwidth of data across networks. For more information about the variables surrounding data transfer over networks, see
+<a href="https://tinyurl.com/yf33y6wg">How to Move Data</a>. Even on low-latency networks, it can speed large transfers by 4-10x.  However, it is not effective for small transfers, since the startup overhead will slow the effective throughput.</p></div>
+<div class="sect2">
+<h3 id="_general_features">2.1. General Features</h3>
+<div class="paragraph"><p>Versions &lt;2 allowed the SingleHost (SH) version to use 10s to 100s of rsyncs to increase
+aggregate bandwidth. Versions &gt;2 allow MultiHost (MH) send &amp; receive to increase bandwidth
+saturation to both regular rsync connections as well as rsyncd servers. This allows the
+traffic to be split out to servers on different networks as well as sending to multiple
+filesystems on the receiving end (tho the split dirs would then have to be re-combined).</p></div>
+<div class="paragraph"><p><em>pfp2</em> uses Ganael Laplanche&#8217;s excellent <a href="http://goo.gl/K1WwtD">fpart</a> to dynamically create <em>chunkfiles</em> for rsync
+to read, bypassing the need to wait for rsync&#8217;s complete recursive scan. ie, it
+starts the transfer almost immediately, as soon as the first chunk is written.
+For large, deep trees, this can be quite useful.
+Also see the  <a href="#filesfrom">filesfrom</a> options below. <em>pfp2</em> also allows huge transfers to take place without the memory overflow sometimes seen with using a single rsync, due to splitting the memory required over many smaller rsync instances.</p></div>
+<div class="paragraph"><p>In both SH and MH, <em>pfp2</em> monitors the system <a href="https://www.howtogeek.com/194642/understanding-the-load-average-on-linux-and-other-unix-like-systems/">loadavg</a>.  It will suspend spawned rsyncs until the 1m load decreases below the cutoff, then UNsuspend them as the load decreases below it.</p></div>
+<div class="paragraph"><p>In the SH version, suspending the parent <em>pfp2</em> (with Ctrl+Z) will suspend all rsync children, regardless of current state. Similarly, if you kill the parent <em>pfp2</em> (Ctrl+C), all the children rsyncs will die with various cries of distress, depending on their states.  In the MH version, the spawned rsyncs are running independently on separate hosts and can only be controlled by commands issues to that host. ie you have to <em>ssh</em> to the host and suspend or kill the processes separately. A version where the hosts communicate via sockets is in the works and a <em>killer</em> script <strong>pfp2stop</strong> is written out at each MH invocation, which will ssh to each of the SEND and REC hosts to kill off all the rsync and <em>pfp2</em> processes running.</p></div>
+<div class="paragraph"><p><em>pfp2</em> can send files to any host with a standard rsync on the other end. In <em>normal</em>
+client mode (the remote rsync starts up on demand via ssh) the target syntax
+is either <em>host:/fully/qualified/path</em> or <em>host:path</em> (implying a dir off the
+user&#8217;s HOME dir (specified in other apps as as <em>host:~/path</em>, but unacceptable to a native rsync).
+<em>pfp2</em> can also send data to an <strong>rsyncd server</strong>.  The rsyncd target syntax requires
+a module name (<em>host::module</em>) and the user must be pre-registered
+in the server&#8217;s <em>/etc/rsyncd.conf</em> and <em>/etc/rsyncd.secrets</em> file - see
+<em>man rsyncd.conf</em>, unless the server is running without any kind of authentication.</p></div>
+<div class="paragraph" id="introinterface"><p>Unless changed by <em>--interface</em>, <em>pfp2</em> assumes and monitors the routable interface.
+The transfer will use whatever interface normal routing provides, normally
+set by the name of the target.  While rsync can be used for non-host-based
+transfers (between mounted filesystems), it works less well than for strictly network-based
+syncs. <em>pfp2</em> will honor requests to sync across local filesystems and shows low but significant  speedup (2x-4x).</p></div>
+<div class="admonitionblock">
+<table><tr>
+<td class="icon">
+<img src="./images/icons/tip.png" alt="Tip">
+</td>
+<td class="content">If you need to transfer data between mounted filesystems, I recommend the
+<a href="https://www.fpart.org/#fpsync">fpsync</a> tool
+contained in the <a href="https://www.fpart.org/">fpart</a> package above].  fpsync is simpler than <em>pfp2</em> and
+for that reason alone may be more attractive.</td>
+</tr></table>
+</div>
+<div class="paragraph"><p><em>pfp2</em> only works on dirs and files that originate from the current dir (or
+specified via <em>--startdir</em>).  You cannot include dirs and files from
+discontinuous or higher-level dirs.  <em>pfp2</em> also <em>does not</em> use rsync&#8217;s
+sophisticated/idiosyncratic treatment of trailing &#8216;/s&#8217; to direct where
+files vs dirs are sent; dirs are treated as dirs regardless of the
+trailing &#8216;/&#8217;.</p></div>
+<div class="paragraph"><p><strong>The .pfp2 dir</strong> : (unless redirected to another dir via the <em>--altcache</em> option), this
+contains the cache dir (<em>fpcache</em>, which is cleared
+on each run), and the time-stamped rsync log files. These can accumulate
+quickly since each rsync instance will leave a date-stamped log.
+If you use the MH version, the .pfp2 dir is created in the common shared directory
+(<em>--commondir</em>), and contains the (common) fpcache dir.  The rsync logs are stored in the host-named subdirectories in the .pfp2 dir and are NOT deleted by the next <em>pfp2</em> run.</p></div>
+<div class="paragraph"><p>If you use the MH version, the STDERR/STDOUT of the entire transfer
+(the text that&#8217;s written to the screen) from each of the SEND hosts is captured in the
+host-specific dir named <em>pfp2-log-(time)_(date)</em>.</p></div>
+<div class="paragraph"><p>Due to the terminal text coloration, the pfp2-log files are
+best viewed by cat&#8217;ing them to the terminal and then if necessary, copy-pasting them
+from the terminal.</p></div>
+<div class="paragraph"><p><strong>Odd characters in names</strong> : <em>pfp2</em> will refuse to transfer some
+oddly named files (tho it should copy
+filenames with spaces fine.  Filenames with embedded newlines, DOS EOLs,
+and some other odd chars will be recorded in the log files in the
+<em>.pfp2</em> dir (see above).
+You should be able to specify dirs and files in the <em>pfp2</em> command with either/both escaped spaces
+or with quotes: "file\ with\ spaces" or &#8216;file with spaces&#8217;. Internal to pfp2, rsync rules prevail.</p></div>
+</div>
+<div class="sect2">
+<h3 id="_release_license">2.2. Release License</h3>
+<div class="paragraph"><p>parsyncfp2  is distributed under the Gnu Public License (GPL) v3.</p></div>
+</div>
+<div class="sect2">
+<h3 id="installation">2.3. Installation</h3>
+<div class="paragraph"><p>Installation of <em>parsyncfp2</em> is fairly simple.  There&#8217;s not yet a deb or rpm package, but the bits to make it work that are not part of a fairly standard Linux distro are the Perl scripts <em>parsyncfp2</em>, <em>scut</em> (like <em>cut</em> but more flexible), and <em>stats</em> (spits out descriptive statistics of whatever semi-numeric stream is fed to it).
+The rest of the dependents are listed here:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+<strong>Debian/Ubuntu-like:</strong>
+</p>
+</li>
+</ul></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>sudo apt install ethtool iproute2 fpart iw libstatistics-descriptive-perl infiniband-diags
+ git clone https://github.com/hjmangalam/parsyncfp2
+ cd parsyncfp2; cp parsyncfp2 scut stats ~/bin</pre>
+</div></div>
+<div class="ulist"><ul>
+<li>
+<p>
+<strong>RHel/Centos/Rocky-like:</strong>
+</p>
+</li>
+</ul></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre> sudo yum install iw fpart ethtool iproute perl-Env.noarch  \
+   perl-Statistics-Descriptive wireless-tools infiniband-diags
+ git clone https://github.com/hjmangalam/parsyncfp2
+ cd parsyncfp2; cp parsyncfp2 scut stats ~/bin</pre>
+</div></div>
+<div class="sect3">
+<h4 id="requiredutils">2.3.1. Required utilities and packages</h4>
+<div class="paragraph"><p>Should the above commands not fulfill the requirements or be missing from your set of repositories, the utilities are listed below.</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+ethtool - query or control network driver and hardware settings. Install via repository.
+</p>
+</li>
+<li>
+<p>
+ip - show / manipulate routing, network devices, interfaces and tunnels. Install via repository.
+</p>
+</li>
+<li>
+<p>
+fpart - Sort and pack files into partitions. Now in many distro repositories or install from: <a href="https://github.com/martymac/fpart">github</a>;
+</p>
+</li>
+<li>
+<p>
+scut - a more intelligent cut.  Included in the parsyncfp2 github
+</p>
+</li>
+<li>
+<p>
+stats - calculate descriptive stats from STDIN. Included in the parsyncfp2 github
+</p>
+</li>
+<li>
+<p>
+Perl::Descriptive-Statistics - basic descriptive statistical functions
+</p>
+</li>
+</ul></div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_recommended_utilities">2.4. Recommended Utilities</h3>
+<div class="ulist"><ul>
+<li>
+<p>
+iwconfig - configure a wireless network interface. Needed only for WiFi. Install via repository.
+</p>
+</li>
+<li>
+<p>
+perfquery - query InfiniBand port counters.  Needed only for InfiniBand. Install via repository.
+</p>
+</li>
+</ul></div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_options_in_detail">3. Options in detail</h2>
+<div class="sectionbody">
+<div class="paragraph"><p><em>pfp2</em> has a lot of options, but most are straightforward.  The  <a href="#multihostopts">MultiHost</a> and  <a href="#filesfrom">FilesFrom</a> options require a little more description and are described in their own sections below.</p></div>
+<div class="sect2">
+<h3 id="_basic_options_for_both_sh_and_mh">3.1. Basic Options for both SH and MH</h3>
+<div class="paragraph"><p>The only native rsync options that <em>pfp2</em> uses are <em>-a</em> (archive),
+<em>-s</em> (protect-args), and <em>-l</em> (copy symlinks as symlinks).
+If you need to pass more options to rsync, then it&#8217;s up to you to provide them ALL
+via <em>--ro</em> and you must include the entire option string as rsync would see it
+(--ro=<em>-slaz --times</em>)</p></div>
+<div class="paragraph"><p>In the list <em>pfp2</em> options below, the brackets indicate:</p></div>
+<div class="paragraph"><p><strong>[i]</strong> = integer number,  <strong>[f]</strong> = floating point number,   <strong>[s]</strong> = "quoted string",  <strong>( )</strong> = the default if any</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+<strong>--NP|np</strong> [i] (sqrt(#CPUs))The number of rsync processes to start. The
+optimal NP depends on many variables.  Try the default and increase as needed. No point in using a high NP if your network won&#8217;t support it.
+</p>
+</li>
+<li>
+<p>
+<strong>--altcache|ac</strong> [/path/to/dir] : The alternative cache dir for placing it on another FS
+or for running multiple SH (not MH) <em>pfp2s</em> simultaneously
+</p>
+</li>
+<li>
+<p>
+<strong>--startdir|sd</strong> [s] (<span class="monospaced">pwd</span>) : The top-level directory at which <em>pfp2</em> starts looking for files &amp; dirs.
+You can use globs/regexes with <em>--startdir</em>, but only if you&#8217;re at that
+point in the dir tree. ie: if you&#8217;re not in the dir where the globs can be
+expanded, then the glob will fail.  However, explicit dirs can be set from
+anywhere if given an existing dir with <em>--startdir</em>.
+</p>
+</li>
+<li>
+<p>
+<strong>--maxbw</strong> [i] in KB/s (unlimited): <em>pfp2</em> appropriates rsync&#8217;s bandwidth throttle mechanism,
+using <em>--maxbw</em> as a passthru to rsync&#8217;s <em>bwlimit</em> option, but divides it by the NP value so
+as to keep the total bandwidth the same as the stated limit.  It monitors and
+shows <em>total</em> (not just pfp2&#8217;s) bandwidth thru the given interface.
+</p>
+</li>
+<li>
+<p>
+<strong>--maxload|ml</strong> [f] (NP*2) : max system load - if 1m loadavg &gt; maxload, 1 rsync
+process will be suspended per <em>checkperiod</em> cycle until the loadavg decreases below the <em>maxload</em>.
+At that point, the suspended rsyncs will be UNsuspended, one per <em>checkperiod</em>.  rsync is very CPU-light;
+running 6 rsyncs with compression (--ro=<em>-slaz</em>) causes an increase in loadavg of only about 1-2,
+depending on the storage systems. This is handled independently on each of the SEND hosts.
+</p>
+</li>
+<li>
+<p>
+<strong>--chunksize|cs</strong> [s] (10G) : aggregate size of files allocated to one rsync process.
+Can specify in <em>human</em> terms [100M, 50K, 1T] as well as integer bytes. <em>pfp2</em> will warn once when/if
+you exceed the WARN # of chunkfiles (2000) and abort if
+you exceed the FATAL # of chunkfiles (5000). You CAN force
+it to use very high numbers of chunkfiles by setting
+the number negative (<em>--chunkfile=-50GB</em>), but this can be risky.
+Optimally, you want to choose a chunksize that will result in a fairly short startup
+time but will not result in 10s of 1000s of files. Decrease the NUMBER of chunkfiles by increasing the
+SIZE of the chunkfiles.  The sweet spot is to choose a chunksize that will result in no more than 10x the NP number, so if <em>--NP=20</em>, there should be no more than ~200 chunkfiles, altho you have very broad latitude to set your own preferences.
+</p>
+</li>
+<li>
+<p>
+<strong>--interface|I</strong> [s] : network interface to monitor (not use; see <a href="#introinterface">above</a>).
+Only SENT bytes are displayed, and the bytes are the total sent thru the link, not just from <em>pfp2</em>, so it&#8217;s
+a rough estimate of the the bandwidth.
+</p>
+</li>
+<li>
+<p>
+<strong>--ro</strong> [s] : Options passed to rsync as quoted string .
+This option triggers a pause before executing to verify the command. The <em>--ro</em>
+string can pass any rsync option to all the rsyncs that will be started.  This allows options
+like <em>-z</em> (compression) or <em>--exclude-from</em> (filter out unwanted files). If you use this
+option, you&#8217;re responsible for supplying ALL the options and providing the files and formats required.
+The <em>--ro</em> string is NOT appended to the default <em>-asl</em> string. DO NOT use any <em>delete</em> options with this utility.  See <a href="#hints">Hints</a> below.
+</p>
+</li>
+<li>
+<p>
+<strong>--checkperiod|cp</strong> [i] (3) : Sets the period in seconds between updates.
+This is a best effort attempt.  If chunksize is set so small so 1000s of chunkfiles are created,
+file IO may lengthen this time.
+</p>
+</li>
+<li>
+<p>
+<strong>--rdma</strong> : report RDMA bytes thru the IB or IB-bonded interface, otherwise, only TCP/IP bytes will be reported.
+</p>
+</li>
+<li>
+<p>
+<strong>--reusechunks</strong> [i] (1) : Re-use the chunking data collected for the
+previous run, using the same chunk size. Useful for restarting a run that was mistakenly ended w/o
+waiting for fpart to recalculate the chunks. The integer argument is the chunk to start at, so rather than
+running thru all the (possibly 100s of) chunks, you can start at the one closest to where the interruption occurred.
+</p>
+</li>
+<li>
+<p>
+<strong>--verbose|v</strong> [0-3] (2) : Sets chattiness. 3=very; 2=normal; 1=less; 0=none.
+This only affects verbosity post-start; warning &amp; error messages will still be printed.
+This is a work in progress.
+</p>
+</li>
+<li>
+<p>
+<strong>--slowdown</strong> [f] (0.5) : Introduces delays between ssh-mediated commands if
+the RTT is too long.  It&#8217;s increased in steps automatically for large RTTs, but this option allows you
+to explicitly slow down the speed at which ssh connection are made. Increment in integer seconds if you see errors like:
+<em>rsync error: unexplained error (code 255) at io.c(xxx) [sender=x.x.x]</em>
+</p>
+</li>
+<li>
+<p>
+<strong>--dispose|d</strong> [s] (l) : What to do with the fpart cache files. (l)eave untouched,
+(c)ompress to a tarball, (d)elete.
+</p>
+</li>
+<li>
+<p>
+<strong>--email</strong> [s] (none) : Email address to send completion message. The email address should
+not need escaping or quoting but should also work with them as well (joe\@go.com).  The SEND
+host will need a working mailer for this to work.
+</p>
+</li>
+<li>
+<p>
+<strong>--nowait</strong> : For scripting, sleep for a few sec instead of pausing and waiting for human intervention.
+</p>
+</li>
+<li>
+<p>
+<strong>--version|V</strong> : Dumps version string and exits
+</p>
+</li>
+<li>
+<p>
+<strong>--help|h</strong> : Dumps a short version of this help into your pager and then exits when you quit.
+</p>
+</li>
+</ul></div>
+</div>
+<div class="sect2">
+<h3 id="multihostoperation">3.2. MultiHost (MH) Operation</h3>
+<div class="sect3">
+<h4 id="_overview">3.2.1. Overview</h4>
+<div class="paragraph"><p>The single <em>pfp2</em> script has both SH and MH functionality.</p></div>
+<div class="paragraph"><p>The MH options allows you to rsync in parallel streams via
+multiple SEND hosts to the same or multiple RECEIVE hosts, including sending to different
+filesystems on the different RECEIVE hosts.  The RECEIVE hosts can be:</p></div>
+<div class="olist arabic"><ol class="arabic">
+<li>
+<p>
+<strong>standard servers</strong> which launch matching rsyncs via the usual mechanism.
+These can also have the same or different endpoints.
+</p>
+</li>
+<li>
+<p>
+<strong>rsyncd servers</strong> with different modules and as such, can define different
+authentication for different users and different endpoints for the data.  The
+comprehensive description of how this works is described in rsyncd.conf(5).
+Make sure that the rsyncd can start as many rsyncs as the sending hosts require
+by modifying the <em>max connections</em> line.
+</p>
+</li>
+</ol></div>
+<div class="paragraph"><p>Both types can be mixed in the same hosts string.  The MH version
+requires that the initiator and all SEND hosts have access to a <strong>common
+filesystem</strong> for both data and configuration info.</p></div>
+<div class="admonitionblock">
+<table><tr>
+<td class="icon">
+<img src="./images/icons/important.png" alt="Important">
+</td>
+<td class="content">The required last element in a MH command is <em>POD::/path</em> (<em>POD</em> for a pod of
+whales) which is the default
+path for any RECEIVE hosts that haven&#8217;t been defined in the <em>--hosts</em> option.  This is only
+the case for regular paths, not for rsyncd module definitions.  So while the terminal target
+path will be appended to otherwise naked RECEIVE hosts, rsyncd modules have to be
+completely specified in the hosts file as <em>host::module</em>
+(More info below and see <a href="#goodexample5">Good Example 5</a>, <a href="#goodexample6">Good Example 6</a> <a href="#goodexample7">Good Example 7</a> below).</td>
+</tr></table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="multihostsequence">3.2.2. MultiHost <em>pfp2</em> sequence:</h4>
+<div class="ulist"><ul>
+<li>
+<p>
+start the process on the <em>master</em> host
+</p>
+</li>
+<li>
+<p>
+process the options
+</p>
+</li>
+<li>
+<p>
+check the status &amp; separation of the SEND and REC hosts and rsync some required utilities to the SEND
+hosts (requested via <em>--checkhosts</em>) and verify that the <em>pfp2</em> scripts being used are identical.
+</p>
+</li>
+<li>
+<p>
+start the <em>fpart</em> chunking process on the <em>master</em> node (unless it&#8217;s been done previously and you&#8217;re using the <em>--reusechunks</em> option.)
+</p>
+</li>
+<li>
+<p>
+reformat the <em>pfp2</em> command based on the original options and how many SEND hosts were requested
+</p>
+</li>
+<li>
+<p>
+start the SEND host processes (using the same <em>pfp2</em> Perl script), each with the same number of parallel rsyncs.
+</p>
+</li>
+<li>
+<p>
+and then exit the master process.
+</p>
+</li>
+</ul></div>
+<div class="paragraph"><p>The SEND hosts will continue to send output back to the originating terminal (prefixed or suffixed)
+with the SEND hostname so you can decipher which SEND host is saying what. This information is not
+failsafe since output from different hosts can overwrite each other. If you wish to view the
+complete output per SEND host, each SEND host log can be found in the host-specific subdir in the
+file <em>pfp-log-$Mar 23, 2023</em>.</p></div>
+<div class="paragraph"><p>However, unlike the original parsyncfp or using the SH option, killing or suspending the originating
+program will have no effect on the SEND hosts; the remote rsyncs are independent and have to be
+killed manually. This SEND host independence should be addressed shortly via socket-based controls.</p></div>
+<div class="paragraph"><p>In the meantime, a <em>killer</em> script called <strong>pfp2stop</strong> is automatically generated when a MH
+run is initiated that will ssh to each SEND and RECEIVE host and kill off all YOUR rsync
+and <em>pfp2</em> processes (even those not associated with the instigating pfp2, so be careful).
+The <strong>pfpstop</strong> script is usually placed in your <em>parsync_dir</em> and its exact path is emitted a
+couple times in the run of the <em>pfp2</em> script as a reminder.</p></div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="multihostopts">3.3. Options for MultiHost transfers</h3>
+<div class="paragraph"><p>The MultiHost (MH) version allows you to rsync multiple streams of data via
+multiple SEND hosts to the same or multiple RECEIVE (REC) hosts, including different
+filesystems on the different REC hosts.  The REC hosts can be:
+. rsyncd servers with multiple modules and as such, can define different
+auth for different users and different endpoints for the data.  The
+comprehensive description of how this works is described in rsyncd.conf(5)
+. standard servers which launch matching rsyncs via the usual mechanism.
+These can also have the same or different endpoints.</p></div>
+<div class="paragraph"><p>In a MH command, the last phrase is the <strong>POD::</strong> string.  This not only defines the
+command as MH, but also provides the default storage path for all REC hosts in
+the <em>--hosts</em> argument that lack an explicit one.</p></div>
+<div class="paragraph"><p>Both types can be mixed in the same hosts string.  The MH version
+requires that the master and all the send hosts (which can include the
+master) have access to a common filesystem for both data and configuration info.</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+<strong>--checkhost</strong> : Requests a pre-check to make sure that the SEND &amp; RECEIVE hosts specified
+with <em>--hosts</em> do not have any rsyncs running.  If they do, the number of them is reported.
+Those rsyncs may be valid and independent of <em>pfp2</em> but it may be evidence of a failed <em>pfp2</em>
+which may interfere with another <em>pfp2</em> launch. This option also pushes the required utilities
+to the SEND hosts to make sure that they have the utilities necessary to run with full functionality.
+</p>
+</li>
+<li>
+<p>
+<strong>--commondir</strong> [s] : The shared, common dir in which all chunk files and rsync logs will be stored.
+Similar to <em>--altcache</em>  but MUST be readable by all SEND hosts.
+</p>
+</li>
+<li>
+<p>
+<strong>--rpath</strong> [s] : the remote PATH prefix on the SEND hosts to check for the bits needed to run this.  It is prefixed to the remote ssh cmd as <em>export PATH=&lt;rpath string&gt;:$PATH;</em> The <em>rpath</em> string can contain as many paths as you&#8217;d like, separated by colons (:), tho vars have to be escaped appropriately.
+</p>
+</li>
+</ul></div>
+<div class="listingblock">
+<div class="content monospaced">
+<pre>ie:
+  --rpath="~/bin:$HOME/pfp2/bin"
+
+  (default is ~/bin:$parsync_dir/.pfp2), and ':$PATH is also appended so
+        --rpath="~/bin:$HOME/pfp2/bin"
+            is transmitted as:
+        --rpath="~/bin:$HOME/pfp2/bin:$PATH"</pre>
+</div></div>
+<div class="ulist"><ul>
+<li>
+<p>
+<strong>--hosts</strong> [s] : the string argument specifies the SEND and REC hosts, optionally supplying
+REC hosts with individual alternate paths to store data.
+The <em>--hosts</em> string format is a comma-delimited set of <em>Send=Receive</em> hosts.<br>
+example: "s1=r1:/path1,s2=r2:/path2,s3=r3:/path3,s4=r4,s5=r5"<br>
+where each <em>s#</em> and <em>r#</em> imply a full "user\@host" string.  <em>s#</em> and <em>r#</em> obey
+the standard Linux rules that they are either long or short hostnames that are
+resolvable by your DNS or by an entry in the <em>/etc/hosts</em> file or a numeric
+address (113.42.23.56). Also, each <em>r#</em> can have a storage path appended (r2:/path2).  If the REC
+path is not given, the path from the final <em>POD::/path</em> target is appended.
+ie pfp [option option option..] POD::/common/default/receive/target.
+</p>
+</li>
+</ul></div>
+<div class="paragraph"><p>If you specify <em>different</em> REC paths, the SEND data will
+be split over those host:/path combinations, so they will
+have to be manually combined afterwards. This is to allow
+different remote filesystems to accept high bandwidth
+transmission without impacting other FS operations.
+The SEND=REC couplets follow ssh rules so that if the user at
+one of the hosts is different than the one being used to
+initiate the process, you&#8217;ll have to specify the user.  Similarly
+for the REC host, if the user is different than the initiating USER.
+ie: in the following option string:</p></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>--hosts="cooper=ben,tux@chinstrap=hjm@ben,nash=ben"</pre>
+</div></div>
+<div class="paragraph"><p><em>hjm</em> is the initiating user and is the mediating user on cooper,
+ben, and nash, while <em>tux</em> is the mediating user on chinstrap.
+Because <em>tux@chinstrap</em> is mediating the command, ssh assumes
+the same user on ben, so <em>hjm@ben</em> has to be explicitly specified.
+The required last element in a MH command is
+<em>POD::/path</em> which is the default path for any REC
+hosts that haven&#8217;t been defined in the <em>--hosts</em> option.
+(More info below and see Good Example 4 &amp; 5 below)</p></div>
+<div class="paragraph"><p>For rsyncd targets, you can specify the REC hosts as:</p></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre> r1::module_name
+ r2::module_name2
+ etc</pre>
+</div></div>
+<div class="paragraph"><p>and you can mix rsyncd targets with regular rsync targets so a valid hosts string could be:</p></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>"s1=r1:/path1,s2=r2::mod2,s3=r3:/path3,s4=r4::mod4,s5=r5"</pre>
+</div></div>
+<div class="paragraph"><p>However, unless the rsyncd server is open (without authorization) you must
+export your RSYNC_PASSWORD in the SEND host&#8217;s <em>~/.bashrc</em> for
+this to work, or use <em>--ro="--password-file=FILE"</em> to point to a
+permission-protected file containing the appropriate credentials.
+Otherwise, the responding rsyncd will query for your rsync user password (not
+your login password).  This is defined in the rsyncd host&#8217;s
+/etc/rsyncd.secrets file and explained in detail via <em>man rsyncd.conf(5)</em>.</p></div>
+<div class="paragraph"><p>The master <em>parsyncfp2</em> command will exit once the fpart chunking process is finished
+and leave the rsyncs running independently on the SEND shosts.  They will
+continue to send output back to the originating terminal (prefixed or suffixed)
+with the SEND hostname so you can decipher which SEND host is saying what.</p></div>
+<div class="paragraph"><p>However, unlike the single-host version, killing or suspending the originating
+program will have no effect on the SEND hosts; the remote rsyncs will have to be
+killed manually.  This is made easier with a <em>kill script</em> that is generated at
+YOUR rsync and <em>parsyncfp2</em> instances running (including ones that were not part of the
+the originating parsyncfp2, so be careful).</p></div>
+<div class="paragraph"><p>This SEND host independence should be addressed shortly via socket-based controls.</p></div>
+<div class="sect3">
+<h4 id="_stopping_a_multihost_pfp2">3.3.1. Stopping a MultiHost pfp2</h4>
+<div class="paragraph"><p>As noted above in the <a href="#Overview">Overview</a>, a crude <strong>pfp2stop</strong> bash script is generated for each run of the <em>pfp2</em> MultiHost version and will kill all running rsyncs and <em>pfp2</em> processes on all the hosts specified in the <em>--hosts</em> option string.</p></div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="filesfrom">3.4. Options for using filelists</h3>
+<div class="paragraph"><p>(thanks to Bill Abbott for the inspiration/guidance).</p></div>
+<div class="paragraph"><p>These options were created so that people who use filesystem databases such as
+<a href="https://sourceforge.net/projects/robinhood/">Robinhood</a>
+or <a href="https://starfishstorage.com/">Starfish</a>, or filesystems such as
+<a href="https://www.ibm.com/docs/en/gpfs/4.1.0.4?topic=guide-introducing-general-parallel-file-system">GPFS</a>,
+can generate lists of files directly from these utilities
+and avoid the (fast, but additional) overhead of running <em>fpart</em>.</p></div>
+<div class="paragraph"><p>These options work with the MH version as well as the SH version.</p></div>
+<div class="paragraph"><p>The 3 options below provide a way of explicitly naming the files
+you  wish to transfer by providing a file of <em>fully qualified</em> filenames.
+ie. the names start with a leading <em>/</em>.</p></div>
+<div class="paragraph"><p>If you use this list directly with rsync, it will remove the leading <em>/</em> but then
+place the file with that otherwise full path inside the target dir. So
+<em>/home/hjm/DL/hello.c</em> would be placed in <em>/TARGET/home/hjm/DL/hello.c</em>.
+If this result is OK, then simply use the <em>--filesfrom</em> option to specify
+the file of files.  If this is NOT OK, see the <em>-trimpath</em> option below.</p></div>
+<div class="paragraph"><p>If the list of files are NOT fully qualified then you should make sure
+that the command is run from the correct dir so that the rsyncs can find
+the designated dirs &amp; files.</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+<strong>--filesfrom|ff</strong> [s] : Take explicit input file list from given file, 1 path name per line.
+</p>
+</li>
+<li>
+<p>
+<strong>--trimpath|tp</strong> [s] : The path to trim from the front of full path name if <em>--filesfrom</em> file
+contains full path names and you want to trim them. If you want the file <em>/home/hjm/DL/hello.c</em> to end up as <em>/TARGET/DL/hello.c</em> (ie remove the original <em>/home/hjm</em>), you would use the --trimpath option
+as follows: <em>--trimpath=/home/hjm</em>.  This will remove the given path
+before transferring it and assure that the file ends up in the right
+place.  This should work even if the command is executed away from the
+directory where the files are rooted. If you have already modified the
+file list to remove the leading dir path, then of course you don&#8217;t need
+to use this option.  A trailing <em>/</em> is not required; it will be removed regardless.
+</p>
+</li>
+<li>
+<p>
+<strong>--trustme|tm</strong> : Used with <em>--filesfrom</em> above allows the use of file lists of the form:
+</p>
+</li>
+</ul></div>
+<div class="listingblock">
+<div class="content monospaced">
+<pre>size in bytes&lt;tab&gt;/fully/qualified/filename/path
+825692            /home/hjm/nacs/hpc/movedata.txt
+87456826          /home/hjm/Downloads/xme.tar.gz
+
+Such a file format can be generated with 'find' in the format:
+
+  find $PWD/{dir} {criteria} -type f -printf '%s %p\n' | sed -e 's/ /\t/'
+  ie:
+  find $PWD/dir42  -maxdepth 5 -mtime +183 -type f -printf '%s %p\n' | sed -e 's/ /\t/'
+  (to find regular files within 5 levels deep and &gt;  183 days old)</pre>
+</div></div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="hints">4. Hints &amp; Workarounds</h2>
+<div class="sectionbody">
+<div class="admonitionblock">
+<table><tr>
+<td class="icon">
+<img src="./images/icons/important.png" alt="Important">
+</td>
+<td class="content">rsync <em>--delete</em> options will not work with <em>--ro</em> because the
+multiple parallel rsyncs that parsyncfp launches are independent and therefore
+don&#8217;t know about each other (and so cannot exchange info about what should
+be deleted or not.  Use a final, separate <em>rsync --delete</em> to clean up the
+transfer if that&#8217;s your need.</td>
+</tr></table>
+</div>
+<div class="paragraph"><p>Also, rsync options related to additional output has been disallowed to avoid
+confusing pfp2&#8217;s IO handling.  <em>-v/-verbose</em>, <em>--version</em>, <em>-h/--help</em> are
+caught, and <em>pfp2</em> will die with an error.  Most of the info desired from this
+are captured in the rsync-logfile files in the ~/.parsyncfp dir.</p></div>
+<div class="paragraph"><p>Unless you want to view them, it&#8217;s usually a good idea to send all STDERR
+to <em>/dev/null</em> (append * 2&gt; /dev/null * to the command) because there are often
+a variety of utilities that get upset by one thing or another.  Generally,
+silencing the STDERR doesn&#8217;t hurt anything.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="examples">5. Examples</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="goodexample1">5.1. Good example 1</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>% parsyncfp2  --maxload=5.5 --NP=4 \
+--chunksize=\$((1024 * 1024 * 4)) \
+--startdir='/home/hjm' dir[123]  \
+hjm@remotehost:~/backups 2&gt; /dev/null</pre>
+</div></div>
+<div class="paragraph"><p>where:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+<em>--maxload=5.5</em> will start suspending rsync instances when the 1m system
+      load gets to 5.5 and then unsuspending them when it goes below it.
+</p>
+</li>
+<li>
+<p>
+<em>--NP=4</em> starts 4 instances of rsync
+</p>
+</li>
+<li>
+<p>
+<em>--chunksize=\$1024 * 1024 * 4</em> sets the chunksize, by multiplication
+        or by explicit size: 4194304
+</p>
+</li>
+<li>
+<p>
+<em>--startdir=</em>/home/hjm'' sets the working dir of this operation to
+      <em>/home/hjm</em> and <em>dir1 dir2 dir3</em> are subdirs from <em>/home/hjm</em>
+</p>
+</li>
+<li>
+<p>
+the target <em>hjm@remotehost:~/backups</em> is the same target rsync would use
+</p>
+</li>
+<li>
+<p>
+<em>2&gt; /dev/null</em> silences all STDERR output from any offended utility.
+</p>
+</li>
+<li>
+<p>
+It uses 4 instances to rsync dir1 dir2 dir3 to hjm\@remotehost:~/backups
+</p>
+</li>
+</ul></div>
+</div>
+<div class="sect2">
+<h3 id="goodexample2">5.2. Good example 2</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>% parsyncfp2  --checkperiod 6  --NP 3 \
+--interface eth0  --chunksize=87682352 \
+--ro="--exclude='[abc]*'"  nacs/fabio   \
+hjm\@moo:~/backups</pre>
+</div></div>
+<div class="paragraph"><p>The above command shows several options used correctly:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+<em>--chunksize=87682352</em> - shows that the chunksize option can be used with explicit
+integers as well as the human specifiers (TGMK).<br>
+</p>
+</li>
+<li>
+<p>
+--ro="--exclude=<em>[abc]*</em>" - shows the correct form for excluding files
+based on regexes (note the quoting in block above to protect the regex as it gets passed thru)
+</p>
+</li>
+<li>
+<p>
+<em>nacs/fabio</em> - shows that you can specify subdirs as well as top-level dirs (as
+long as the shell is positioned in the dir above, or has been specified via
+<em>--startdir</em><br>
+</p>
+</li>
+</ul></div>
+</div>
+<div class="sect2">
+<h3 id="goodexample3">5.3. Good example 3</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>parsyncfp2 -v 1 --nowait --ac pfp2cache1 --NP 4 --cp=5 --cs=50M --ro '-az'  \
+linux-4.8.4 moo:~/test</pre>
+</div></div>
+<div class="paragraph"><p>The above command shows:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+short version of several options (-v for --verbose, --cp for checkperiod, etc)
+</p>
+</li>
+<li>
+<p>
+shows use of --altcache (--ac pfp2cache1), writing to relative dir pfp2cache1
+</p>
+</li>
+<li>
+<p>
+again shows use of --ro (--ro <em>-az</em>) indicating <em>archive</em> &amp; <em>compression</em>.
+</p>
+</li>
+<li>
+<p>
+includes <em>--nowait</em> to allow unattended scripting of parsyncfp
+</p>
+</li>
+</ul></div>
+</div>
+<div class="sect2">
+<h3 id="goodexample4">5.4. Good example 4</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>parsyncfp2 --NP=8 --chunksize=500M --filesfrom=/home/hjm/dl550 \
+hjm\@moo:/home/hjm/testparsync</pre>
+</div></div>
+<div class="paragraph"><p>The above command shows:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+if you use the <em>--filesfrom</em> option, you cannot use explicit source dirs (all the files come from the file of files (which require full path names)
+</p>
+</li>
+<li>
+<p>
+that the <em>--chunksize</em> format can use human abbreviations (m or M for Mega).
+</p>
+</li>
+</ul></div>
+</div>
+<div class="sect2">
+<h3 id="goodexample5">5.5. Good example 5 (MultiHost)</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>parsyncfp2 --verbose=2 --ro='-aslz' \
+--hosts="bigben=bridgit.ure.edu:/d1/in, \
+          pooki=bridgit.ure.edu:/d2/in, \
+        stunted=bridgit.ure.edu:/d3/in" \
+--hostcheck --ro="-aslz"  --NP 4 --chunk 15G \
+--check 5 --dispo=l --interface=wlp3s0 \
+--commondir=/home/hjm/pfp2 --startdir /home/hjm/pfp2 \
+dir1 dir2 dir3 dir4  POD::/</pre>
+</div></div>
+<div class="paragraph"><p>The above MH command shows:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+3 SEND hosts (bigben, pooki,stunted) all sending data to the REC host bridgit.ure.edu altho the data is being split among 3 filesystems.  You could also define 3 REC hosts, writing data to the SAME PATH if that was a better performance fit.
+</p>
+</li>
+<li>
+<p>
+You could also define 3 REC hosts, writing data to the SAME PATH
+if that was a better fit:
+</p>
+</li>
+</ul></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre> ...
+  --hosts="bigben=bridgit.ure.edu:/d1/in, \
+            pooki=bridgit.ure.edu:/d1/in, \
+          stunted=bridgit.ure.edu:/d1/in" \
+ ...
+  and even shorter:
+ ...
+  --hosts="bigben=bridgit.ure.edu, \
+            pooki=bridgit.ure.edu, \
+          stunted=bridgit.ure.edu" \
+ ...
+
+with the final argument as:
+      POD::/d1/in
+which would distribute the same 'POD::' suffix to all REC hosts.</pre>
+</div></div>
+<div class="ulist"><ul>
+<li>
+<p>
+the preferred way of defining the rsyncopts with <em>--ro=-aslz</em>
+</p>
+</li>
+<li>
+<p>
+the <em>--dispo=l</em> option requests that the cachefiles be left alone.  In MH mode the chunk files MUST be left, since all the independent SEND hosts need to reference them until they&#8217;re finished.
+</p>
+</li>
+<li>
+<p>
+the <em>POD::/</em> terminal element is the (required) default path for any undefined REC hosts.  Since all of the REC hosts paths are defined, they aren&#8217;t affected.
+</p>
+</li>
+</ul></div>
+</div>
+<div class="sect2">
+<h3 id="goodexample6">5.6. Good Example 6 (MultiHost)</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>cd /home/pfp; ~/bin/pfp2  --ro='-slaz' --chunk=50M --dispose=c --NP=6  \
+--commondir=/home/pfp --filesfrom=/home/pfp/recentfilelist.txt \
+--trustme --trimpath='/home/pfp' --checkhost \
+--hosts="stunted=bridgit,bigben=bridgit"  POD::~/test</pre>
+</div></div>
+<div class="paragraph"><p>This example shows:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+that you can symlink or rename the <em>parsyncfp2</em> executable anything (to <em>pfp2</em>, above) and it will continue to be usable. The executable started is compared to the remote one (and is rsync&#8217;ed to the SEND hosts, if the <em>--checkhost</em> option is used, as it is here).
+</p>
+</li>
+<li>
+<p>
+using the <em>--filesfrom</em> options in MH mode, where the prefix <em>/home/pfp</em> is removed from the path of all the filenames with the <em>--trimpath</em> option and the filenames are supplied with sizes, indicated by the <em>--trustme</em> option.
+</p>
+</li>
+<li>
+<p>
+the TARGET string <em>POD::~/test</em> indicating that the naked RECEIVE hosts (<em>stunted</em>, <em>bigben</em>) are automatically suffixed with the string <em>:\~/test</em>
+</p>
+</li>
+<li>
+<p>
+an incorrect option <em>--dispose=c</em> that is overridden in the process.  The chunk files need to be kept until the end so the given <em>--dispose</em> option is detected and changed to <em>--dispose=l</em> to enable this.
+</p>
+</li>
+<li>
+<p>
+the use of <em>--checkhost</em> to make sure all the MH hosts are in good shape to begin an <em>pfp2</em> session.
+</p>
+</li>
+</ul></div>
+</div>
+<div class="sect2">
+<h3 id="goodexample7">5.7. Good example 7 (Multihost)</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>parsyncfp2  --hostcheck --NP=16 --chunk=50G --check 5  \\
+--hosts="bigben=tux@moon1, \\
+          pooki=tux@moon2, \\
+        stunted=tux@moon3  \\
+         cooper=gibson@moon4::circadian" \\
+--maxload=20 --ro='-slaz' \\
+--commondir=/home/pfp --startdir /home/pfp/incoming \\
+dir1 dir2 dir3 dir4  POD::/d1/incoming</pre>
+</div></div>
+<div class="paragraph"><p>The above multihost command shows 4 SEND hosts (bigben, pooki, stunted, cooper) each sending
+16 stream of data to the 4 clustered REC hosts (moon1 - moon4) with the REC data path being provided by the POD default path <em>/d1/incoming</em>, except for moon4 which is using a rsyncd module as the REC endpoint, with the rsyncd ID <em>gibson</em> as the authorized user (this requires the rsyncd password to be part of the ENV on cooper:
+ie the ~/.bashrc must contain <em>RSYNC_PASSWORD=whateveritis</em>).</p></div>
+<div class="paragraph"><p>Thus there are 64 (4x16) rsync streams pushing data to the REC cluster.  This assumes the filesystem on the moon cluster can write that fast and that the intermediate network can provide the bandwidth. It also assumes that the rsync compression requested by the <em>--ro (--ro=</em>-slaz')
+arguments can stay below the individual 1m loadavg of 20 requested  by <em>--maxload=20</em>.  If it doesn&#8217;t, the SEND hosts will start to suspend rsyncs until the loadavg goes below 20.
+The <em>--commondir</em> and <em>--startdir</em> paths define the shared storage and where in it the data to be sent is stored.  <em>--commondir</em> and <em>--startdir</em> do not have to be identical, but they do have to be R/W available
+to all the SEND hosts.
+The <em>--hostcheck</em> command makes sure that required utilities are available, that the <em>parsyncfp2</em> program is identical, and also checks the latency between the SEND and REC hosts.</p></div>
+</div>
+<div class="sect2">
+<h3 id="errorexample1">5.8. ERROR example 1</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>% pwd
+/home/hjm  # executing parsyncfp from here
+
+% parsyncfp2 --NP4  /usr/local  /media/backupdisk</pre>
+</div></div>
+<div class="paragraph"><p>why this is an error:
+- <em>--NP4</em> is not an option (parsyncfp will say "Unknown option: np4"
+    It should be <em>--NP=4</em> or <em>--NP 4</em>
+- if you were trying to rsync <em>/usr/local</em> to <em>/media/backupdisk</em>, it will
+    fail since there is no /home/hjm/usr/local dir to use as a source.
+    This will be shown in the log files in ~/.parsync/rsync-logfile-&lt;datestamp&gt;_#
+    as a spew of "No such file or directory (2)" errors</p></div>
+<div class="paragraph"><p>The correct version of the above command is:</p></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>% parsyncfp2 --NP=4  --startdir=/usr  local  /media/backupdisk</pre>
+</div></div>
+<div class="paragraph"><p>Note that this example is sending data to another local mounted filesystem, not a remote host.
+This is OK.</p></div>
+</div>
+<div class="sect2">
+<h3 id="errorexample2">5.9. Error Example 2</h3>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>% parsyncfp2  hjm@moo.boo.yoo.com:/usr/local --start-dir /home/hjm mooslocal</pre>
+</div></div>
+<div class="paragraph"><p>Why this is an error:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+this command is trying to PULL data from a remote SOURCE to a local TARGET.  pfp2 doesn&#8217;t support that kind of operation yet.
+</p>
+</li>
+</ul></div>
+<div class="paragraph"><p>The correct version of the above command is:</p></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre># ssh to hjm@moo, install parsyncfp2, then:
+% parsyncfp2  --startdir=/usr  local  hjm@remote:/home/hjm/mooslocal</pre>
+</div></div>
+<div class="paragraph" id="errorexample3"><p># Error Example 3</p></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>% parsyncfp2 --NP=4 --chunksize=500M -startdir=/usr/local/bin hjm@remote.host.edu:/home/backups</pre>
+</div></div>
+<div class="paragraph"><p>Why this is an error:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+you&#8217;ve specified a <em>startdir</em> but haven&#8217;t specified the dirs or files
+to be transferred.
+</p>
+</li>
+</ul></div>
+<div class="paragraph"><p>The correct version of the above command is:</p></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>% parsyncfp --NP=4 --chunksize=500M -startdir=/usr/local bin hjm\@remote.host.edu:/home/backups</pre>
+</div></div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="blocktags">6. Block tags, Version 2.243</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>The following is a functional block list of how <em>pfp2</em> works, described by
+in-line comments indented to the same degree as the code itself to provide some
+functional hinting.
+If you modify the code yourself or want to add more such comments, just prefix them with
+the obvious '##: ' in the code and 'grep -n '\##: ' pfp2.</p></div>
+<div class="literalblock">
+<div class="content monospaced">
+<pre>24:##: == COMMON TO MASTER &amp; SLAVES ==
+25:##: Lib Requirements
+36:##: Dev/github/update gunk
+45:##: ITER notes
+56:##: Global Vars
+79:##: Pre-Getopt var declarations
+97:##: Getopt options &amp; Setup
+135:##: Var declarations
+150:##: Reset colors
+155:##: MD5 checks of executable
+167:##: Declare run-permanent vars
+199:##: Define cache and log dirs
+232:##: Get current system stats
+244:##: Define &amp; init Getopt flag vars
+315:##: ARGV processing
+324:##: parse_rsync_target call
+352:##: Hostlist processing
+465:##: NETIF determination
+533:##: IB / perfquery
+550:##: get IF_SPEED
+568:##: fix .ssh/config
+572:##: checkhost on SINGLEMASTER, RSYNCD, RSYNC hosts (NOT POD hosts)
+584:##: Check loadavg too high
+603:##: == MASTER ONLY ==
+637:##: process Files &amp; Dirs to send
+684:##: Process $FROMLIST, how to set up fpart cmd
+742:##: Warn about OTHER FPs running
+763:##: More $FROMLIST proc
+891:##: == MASTER ONLY ==
+892:##: reformat orig pfp2 arguments for SEND hosts
+922:##: Write out pfpstop script
+954:##: == SEND hosts only (SH/MH)
+955:##: Compose RSYNC_CMD &amp; send it to all the SEND hosts
+1001:##: == MASTER ONLY ==
+1002:##: Write feedgnuplot script to viz data xfer
+1036:##: == MASTER EXITS ==
+1037:##: == SEND hosts only
+1056:##: init Bandwidth vars
+1076:##: Start the overall common rsync loop
+1146:##: stats print loop
+1450:##: Final rsync log check to verify completions.
+1451:##: Detect failed rsyncs and retransmit.
+1478:##: Resend failed rsyncs all at once,
+1494:##: Calc bytes of rsync logs and convert raw bytes to 'human'
+1514:##: Print reminders
+1538:##: Exit cleanup: email
+1544:##: Dispose of cache
+1557:##: Exit message
+1578:##: Left over orphan warning
+1593:##: == Subroutines
+1639:##: parse_rsync_target ($LOCALUSER, $TARGET, $ALTCACHE, $recv_hoststring)
+1889:##: checkhost ( "NODETYPE", $HOST2CHECK, $RSYNCMODULE, $ALTCACHE, $VERBOSE, $MAXLOAD )
+2009:##: first_run_required_utils ()
+2092:##: check_ssh_ok ($HOSTNAME)
+2112:##: get_nbr_chunk_files () # 1st ver
+2126:##: remove_fp_cache ()
+2134:##: check_utils($required_str, $recommend_str)
+2180:##: get_rPIDs ($pidfile, $spids)
+2243:##: trim ($string)
+2254:##: getavgnetbw ($NETIF, $CHECKPERIOD, $PERFQUERY)
+2290:##: pause()
+2297:##: INFO($message)
+2309:##: WARN($string)
+2331:##: FATAL($message)
+2344:##: DEBUG (__LINE__, $message)
+2369:##: fixfilenames ($CUR_FP_FLE, $ROOTDIR)
+2404:##: ptgmk ("154.32M")
+2422:##: fix_ssh_config ()
+2459:##: usage ()</pre>
+</div></div>
+</div>
+</div>
+</div>
+<div id="footnotes"><hr></div>
+<div id="footer">
+<div id="footer-text">
+Version 2.59<br>
+Last updated
+ 2024-01-20 17:53:05 PST
+</div>
+</div>
+</body>
+</html>

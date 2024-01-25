@@ -1,6 +1,6 @@
 = parsyncfp2, a MultiHost parallel rsync wrapper
 Harry Mangalam <harry.mangalam@uci.edu>
-v2.42, Feb 24, 2022
+v2.59, Mar 23, 2023
 :icons:
 //  Exec decision:  rsyncd modules must be specified completely on the commandline.
 //  naked rsync hosts can be suffixed with the POD::/path, but it becomes too
@@ -62,13 +62,8 @@ in the server's '/etc/rsyncd.conf' and '/etc/rsyncd.secrets' file - see
 Unless changed by '--interface', 'pfp2' assumes and monitors the routable interface.  
 The transfer will use whatever interface normal routing provides, normally
 set by the name of the target.  While rsync can be used for non-host-based
-transfers (between mounted filesystems), it works poorly and 'pfp2' will not currently 
-support these types of transfers.
-
-TIP: If you need to transfer data between mounted filesystems, I recommend the 
-https://www.fpart.org/#fpsync[fpsync] tool 
-contained in the https://www.fpart.org/[fpart] package above].  fpsync is simpler than 'pfp2' and 
-for that reason alone may be more attractive. 
+transfers (between mounted filesystems), it works less well than for strictly network-based 
+syncs. 'pfp2' will honor requests to sync across local filesystems and shows low but significant  speedup (2x-6x).
 
 'pfp2' only works on dirs and files that originate from the current dir (or
 specified via '--startdir').  You cannot include dirs and files from
@@ -82,14 +77,20 @@ contains the cache dir ('fpcache', which is cleared
 on each run), and the time-stamped rsync log files. These can accumulate 
 quickly since each rsync instance will leave a date-stamped log.
 If you use the MH version, the .pfp2 dir is created in the common shared directory 
-('--commondir'), cans contains the (common) fpcache dir.  The rsync logs are stored in the host-named subdirectories in the .pfp2 dir and are NOT deleted by the next 'pfp2' run.
+('--commondir'), and contains the (common) fpcache dir.  The rsync logs are stored in the host-named subdirectories in the .pfp2 dir and are NOT deleted by the next 'pfp2' run.
 
 If you use the MH version, the STDERR/STDOUT of the entire transfer 
 (the text that's written to the screen) from each of the SEND hosts is captured in the 
-host-specific dir named 'pfp2-log-(time)_(date)'. If the host is specified as 
-a dotted quad (11.22.33.44) on the commandline instead of the alphabetic 
-name (bingo.bio.bcu.edu), there will be 2 host-specific dirs, one for the 
-dotted quad and one for the alphabetic DNS name (if it can be resolved).
+host-specific dir named 'pfp2-log-(time)_(date)'. 
+
+// I think this is resolved now to a single dir
+
+//If the host is specified as 
+//a dotted quad (11.22.33.44) on the commandline instead of the alphabetic 
+//name (bingo.bio.bcu.edu), there will be 2 host-specific dirs, one for the 
+//dotted quad and one for the alphabetic DNS name (if it can be resolved).
+
+
 Due to the terminal text coloration, the pfp2-log files are 
 best viewed by cat'ing them to the terminal and then if necessary, copy-pasting them 
 from the terminal.
@@ -107,7 +108,7 @@ parsyncfp2  is distributed under the Gnu Public License (GPL) v3.
 
 [[installation]]
 === Installation
-Installation of 'parsyncfp2' is fairly simple.  There's not yet a deb or rpm package, but the bits to make it work  that are not part of a fairly standard Linux distro are the Perl scripts 'parsyncfp2', 'scut' (like scut but a bit more flexible), and 'stats' (spits out descriptive statistics of whatever is fed to it).  
+Installation of 'parsyncfp2' is fairly simple.  There's not yet a deb or rpm package, but the bits to make it work that are not part of a fairly standard Linux distro are the Perl scripts 'parsyncfp2', 'scut' (like 'cut' but more flexible), and 'stats' (spits out descriptive statistics of whatever semi-numeric stream is fed to it).  
 The rest of the dependents are listed here:
 
 - *Debian/Ubuntu-like:*
@@ -160,7 +161,7 @@ In the list 'pfp2' options below, the brackets indicate:
 *[i]* = integer number,  *[f]* = floating point number,   *[s]* = "quoted string",  *( )* = the default if any
 
 - *--NP|np* [i] (sqrt(#CPUs))The number of rsync processes to start. The 
-optimal NP depends on many variables.  Try the default and incr as needed. No point in using a high NP if your network won't support it.
+optimal NP depends on many variables.  Try the default and increase as needed. No point in using a high NP if your network won't support it.
 
 - *--altcache|ac* [/path/to/dir] : The alternative cache dir for placing it on another FS 
 or for running multiple SH (not MH) 'pfp2s' simultaneously
@@ -171,7 +172,7 @@ point in the dir tree. ie: if you're not in the dir where the globs can be
 expanded, then the glob will fail.  However, explicit dirs can be set from
 anywhere if given an existing dir with '--startdir'.
 
-- *--maxbw* [i]in KB/s (unlimited): 'pfp2' appropriates rsync's bandwidth throttle mechanism, 
+- *--maxbw* [i] in KB/s (unlimited): 'pfp2' appropriates rsync's bandwidth throttle mechanism, 
 using '--maxbw' as a passthru to rsync's 'bwlimit' option, but divides it by the NP value so
 as to keep the total bandwidth the same as the stated limit.  It monitors and
 shows 'total' (not just pfp2's) bandwidth thru the given interface.
@@ -206,6 +207,8 @@ The '--ro' string is NOT appended to the default '-asl' string. DO NOT use any '
 - *--checkperiod|cp* [i] (3) : Sets the period in seconds between updates. 
 This is a best effort attempt.  If chunksize is set so small so 1000s of chunkfiles are created, 
 file IO may lengthen this time.
+
+- *--rdma* : report RDMA bytes thru the IB or IB-bonded interface, otherwise, only TCP/IP bytes will be reported.
 
 - *--reusechunks* [i] (1) : Re-use the chunking data collected for the
 previous run, using the same chunk size. Useful for restarting a run that was mistakenly ended w/o
@@ -302,10 +305,10 @@ couple times in the run of the 'pfp2' script as a reminder.
 The MultiHost (MH) version allows you to rsync multiple streams of data via 
 multiple SEND hosts to the same or multiple RECEIVE (REC) hosts, including different 
 filesystems on the different REC hosts.  The REC hosts can be:
-1: rsyncd servers with multiple modules and as such, can define different 
+. rsyncd servers with multiple modules and as such, can define different 
 auth for different users and different endpoints for the data.  The 
 comprehensive description of how this works is described in rsyncd.conf(5)
-2: standard servers which launch matching rsyncs via the usual mechanism. 
+. standard servers which launch matching rsyncs via the usual mechanism. 
 These can also have the same or different endpoints.  
 
 In a MH command, the last phrase is the *POD::* string.  This not only defines the 
@@ -342,7 +345,7 @@ REC hosts with individual alternate paths to store data.
 The '--hosts' string format is a comma-delimited set of 'Send=Receive' hosts. +
 example: "s1=r1:/path1,s2=r2:/path2,s3=r3:/path3,s4=r4,s5=r5" +
 where each 's#' and 'r#' imply a full "user\@host" string.  's#' and 'r#' obey
-the std Linux rules that they are either long or short hostnames that are 
+the standard Linux rules that they are either long or short hostnames that are 
 resolvable by your DNS or by an entry in the '/etc/hosts' file or a numeric 
 address (113.42.23.56). Also, each 'r#' can have a storage path appended (r2:/path2).  If the REC 
 path is not given, the path from the final 'POD::/path' target is appended.
@@ -356,7 +359,7 @@ transmission without impacting other FS operations.
 The SEND=REC couplets follow ssh rules so that if the user at
 one of the hosts is different than the one being used to 
 initiate the process, you'll have to specify the user.  Similarly
-for the REC host is the user is different than the initiating USER.  
+for the REC host, if the user is different than the initiating USER.  
 ie: in the following option string:
 
    --hosts="cooper=ben,tux@chinstrap=hjm@ben,nash=ben"
@@ -373,7 +376,8 @@ hosts that haven't been defined in the '--hosts' option.
 For rsyncd targets, you can specify the REC hosts as: 
 ....
  r1::module_name 
- r2::module_name2 etc" 
+ r2::module_name2 
+ etc 
 ....
 and you can mix rsyncd targets with regular rsync targets so a valid hosts string could be: 
 
@@ -381,7 +385,7 @@ and you can mix rsyncd targets with regular rsync targets so a valid hosts strin
  
 However, unless the rsyncd server is open (without authorization) you must 
 export your RSYNC_PASSWORD in the SEND host's '~/.bashrc' for 
-this to work, or use '--ro="--password-file=FILE" to point to a 
+this to work, or use '--ro="--password-file=FILE"' to point to a 
 permission-protected file containing the appropriate credentials.
 Otherwise, the responding rsyncd will query for your rsync user password (not
 your login password).  This is defined in the rsyncd host's 
@@ -403,7 +407,7 @@ This SEND host independence should be addressed shortly via socket-based control
 
 
 ==== Stopping a MultiHost pfp2
-As noted above in the link:#Overview[Overview], a crude *pfp2stop* bash script is generated for each run of the 'pfp2' MultiHost version and will kill all running rsyncs and 'pfp2' processes.
+As noted above in the link:#Overview[Overview], a crude *pfp2stop* bash script is generated for each run of the 'pfp2' MultiHost version and will kill all running rsyncs and 'pfp2' processes on all the hosts specified in the '--hosts' option string.
 
 
 [[filesfrom]]
@@ -436,7 +440,7 @@ the designated dirs & files.
 - *--filesfrom|ff* [s] : Take explicit input file list from given file, 1 path name per line.
 
 - *--trimpath|tp* [s] : The path to trim from the front of full path name if '--filesfrom' file 
-contains full path names and you want to trim them. If you want the file '/home/hjm/DL/hello.c' to end up as '/target/DL/hello.c' (ie remove the original '/home/hjm'), you would use the --trimpath option
+contains full path names and you want to trim them. If you want the file '/home/hjm/DL/hello.c' to end up as '/TARGET/DL/hello.c' (ie remove the original '/home/hjm'), you would use the --trimpath option
 as follows: '--trimpath=/home/hjm'.  This will remove the given path
 before transferring it and assure that the file ends up in the right
 place.  This should work even if the command is executed away from the
@@ -466,8 +470,11 @@ IMPORTANT: rsync '--delete' options will not work with '--ro' because the
 multiple parallel rsyncs that parsyncfp launches are independent and therefore 
 don't know about each other (and so cannot exchange info about what should
 be deleted or not.  Use a final, separate 'rsync --delete' to clean up the 
-transfer if that's your need.  If this functionality is important, 
-https://www.fpart.org/#fpsync[fpsync] attempts to do this in-line. 
+transfer if that's your need.  
+
+// not clear that fpsync can do this
+//If this functionality is important, 
+//https://www.fpart.org/#fpsync[fpsync] attempts to do this in-line. 
 
 Also, rsync options related to additional output has been disallowed to avoid 
 confusing pfp2's IO handling.  '-v/-verbose', '--version', '-h/--help' are 
@@ -475,7 +482,7 @@ caught, and 'pfp2' will die with an error.  Most of the info desired from this
 are captured in the rsync-logfile files in the ~/.parsyncfp dir.
 
 Unless you want to view them, it's usually a good idea to send all STDERR 
-to /dev/null (append '2> /dev/null' to the command) because there are often 
+to '/dev/null' (append * 2> /dev/null * to the command) because there are often 
 a variety of utilities that get upset by one thing or another.  Generally,
 silencing the STDERR doesn't hurt anything.
 
@@ -488,7 +495,7 @@ silencing the STDERR doesn't hurt anything.
 === Good example 1
 
 ....
-% parsyncfp  --maxload=5.5 --NP=4 \
+% parsyncfp2  --maxload=5.5 --NP=4 \
 --chunksize=\$((1024 * 1024 * 4)) \
 --startdir='/home/hjm' dir[123]  \
 hjm@remotehost:~/backups 2> /dev/null
@@ -502,7 +509,7 @@ where:
 - '--chunksize=\$((1024 * 1024 * 4))' sets the chunksize, by multiplication
         or by explicit size: 4194304 
 - '--startdir='/home/hjm'' sets the working dir of this operation to
-      '/home/hjm' and dir1 dir2 dir3 are subdirs from '/home/hjm' 
+      '/home/hjm' and 'dir1 dir2 dir3' are subdirs from '/home/hjm' 
 - the target 'hjm@remotehost:~/backups' is the same target rsync would use 
 - '2> /dev/null' silences all STDERR output from any offended utility. 
 - It uses 4 instances to rsync dir1 dir2 dir3 to hjm\@remotehost:~/backups
@@ -511,7 +518,7 @@ where:
 === Good example 2
 
 ....
-% parsyncfp   --checkperiod 6  --NP 3 \
+% parsyncfp2  --checkperiod 6  --NP 3 \
 --interface eth0  --chunksize=87682352 \
 --ro="--exclude='[abc]*'"  nacs/fabio   \
 hjm\@moo:~/backups
@@ -523,7 +530,7 @@ The above command shows several options used correctly:
 integers as well as the human specifiers (TGMK). +
 - --ro="--exclude='[abc]*'" - shows the correct form for excluding files
 based on regexes (note the quoting in block above to protect the regex as it gets passed thru)
-This line is somewhat mangled +
+//This line is somewhat mangled +
 - 'nacs/fabio' - shows that you can specify subdirs as well as top-level dirs (as
 long as the shell is positioned in the dir above, or has been specified via
 '--startdir' +
@@ -532,7 +539,7 @@ long as the shell is positioned in the dir above, or has been specified via
 === Good example 3
 
 ....
-parsyncfp -v 1 --nowait --ac pfp2cache1 --NP 4 --cp=5 --cs=50M --ro '-az'  \
+parsyncfp2 -v 1 --nowait --ac pfp2cache1 --NP 4 --cp=5 --cs=50M --ro '-az'  \
 linux-4.8.4 moo:~/test
 ....
 
@@ -546,7 +553,7 @@ The above command shows:
 [[goodexample4]]
 === Good example 4
 ....
-parsyncfp-list --NP=8 --chunksize=500M --filesfrom=/home/hjm/dl550 \
+parsyncfp2 --NP=8 --chunksize=500M --filesfrom=/home/hjm/dl550 \
 hjm\@moo:/home/hjm/testparsync
 ....
 
@@ -559,7 +566,7 @@ The above command shows:
 === Good example 5 (MultiHost)
 
 ....
-parsyncfp --verbose=2 --ro='-aslz' \
+parsyncfp2 --verbose=2 --ro='-aslz' \
 --hosts="bigben=bridgit.ure.edu:/d1/in, \
           pooki=bridgit.ure.edu:/d2/in, \
         stunted=bridgit.ure.edu:/d3/in" \
@@ -612,8 +619,8 @@ This example shows:
 
 - that you can symlink or rename the 'parsyncfp2' executable anything (to 'pfp2', above) and it will continue to be usable. The executable started is compared to the remote one (and is rsync'ed to the SEND hosts, if the '--checkhost' option is used, as it is here).
 - using the '--filesfrom' options in MH mode, where the prefix '/home/pfp' is removed from the path of all the filenames with the '--trimpath' option and the filenames are supplied with sizes, indicated by the '--trustme' option.
-- the TARGET string 'POD::~/test' indicating that the naked RECEIVE hosts ('stunted', 'bigben') are automatically suffixed with the string ':~/test'
-- an incorrect option '--dispose=c' that is overridden in the process.  The chunk files need to be kept until the end so '--dispose' is changed to '--dispose=l' to enable this.
+- the TARGET string 'POD::\~/test' indicating that the naked RECEIVE hosts ('stunted', 'bigben') are automatically suffixed with the string ':\~/test'
+- an incorrect option '--dispose=c' that is overridden in the process.  The chunk files need to be kept until the end so the given '--dispose' option is detected and changed to '--dispose=l' to enable this.
 - the use of '--checkhost' to make sure all the MH hosts are in good shape to begin an 'pfp2' session.
 
 [[goodexample7]]
@@ -621,10 +628,10 @@ This example shows:
 
 ....
 parsyncfp2  --hostcheck --NP=16 --chunk=50G --check 5  \\
---hosts="bigben=tux\@moon1, \\
-          pooki=tux\@moon2, \\
-        stunted=tux\@moon3  \\
-         cooper=gibson\@moon4::circadian" \\
+--hosts="bigben=tux@moon1, \\
+          pooki=tux@moon2, \\
+        stunted=tux@moon3  \\
+         cooper=gibson@moon4::circadian" \\
 --maxload=20 --ro='-slaz' \\
 --commondir=/home/pfp --startdir /home/pfp/incoming \\
 dir1 dir2 dir3 dir4  POD::/d1/incoming
@@ -663,13 +670,16 @@ why this is an error:
 The correct version of the above command is:
 
 ....
-% parsyncfp --NP=4  --startdir=/usr  local  /media/backupdisk
+% parsyncfp2 --NP=4  --startdir=/usr  local  /media/backupdisk
 ....
+
+Note that this example is sending data to another local mounted filesystem, not a remote host.
+This is OK.
 
 [[errorexample2]]
 === Error Example 2
 ....
-% parsyncfp  hjm@moo.boo.yoo.com:/usr/local --start-dir /home/hjm mooslocal
+% parsyncfp2  hjm@moo.boo.yoo.com:/usr/local --start-dir /home/hjm mooslocal
 ....
 
 Why this is an error:
@@ -679,15 +689,15 @@ Why this is an error:
 The correct version of the above command is:
 
 ....
-# ssh to hjm\@moo, install parsyncfp, then:
-% parsyncfp  --startdir=/usr  local  hjm@remote:/home/hjm/mooslocal 
+# ssh to hjm@moo, install parsyncfp2, then:
+% parsyncfp2  --startdir=/usr  local  hjm@remote:/home/hjm/mooslocal 
 ....
 
 [[errorexample3]]
 ### Error Example 3
 
 ....
-% parsyncfp --NP=4 --chunksize=500M -startdir=/usr/local/bin hjm@remote.host.edu:/home/backups
+% parsyncfp2 --NP=4 --chunksize=500M -startdir=/usr/local/bin hjm@remote.host.edu:/home/backups
 ....
 
 
