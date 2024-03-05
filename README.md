@@ -1,4 +1,4 @@
-cp # parsyncfp2
+# parsyncfp2
 a MultiHost parallel rsync wrapper writ in Perl. 
 by Harry Mangalam <hjmangalam@gmail.com>
 Released under GPL v3.
