@@ -250,7 +250,7 @@ $IB_PRSNT         = 0;
 #   . "/flv/gif/gpg/gz/iiq/iso/jar/jp2/jpeg/jpg/k25/kdc/lz/lzma/lzo/m4[apv]/mef/mkv/mos"
 #   . "/mov/mp[34]/mpeg/mp[gv]/msi/nef/oga/ogg/ogv/opus/orf/pef/png/qt/rar/rpm/rw2/rzip"
 #   . "/s7z/sfx/sr2/srf/svgz/t[gb]z/tlz/txz/vob/wim/wma/wmv/xz/zip/";
-$DFLT_RSYNCOPTS = "-asl ";    # the default options to pass to rsync; blanked if define $RSYNCOPTS
+$DFLT_RSYNCOPTS = "-as ";    # the default options to pass to rsync; blanked if define $RSYNCOPTS
 
 # print __LINE__, " :
 # argv=[@argv]
@@ -373,7 +373,7 @@ if ($TARGET =~ /POD/ && defined $RSYNCOPTS && $RSYNCOPTS !~ /^" && $RSYNCOPTS !~
   $RSYNCOPTS = '\'"' . $RSYNCOPTS . '"\'';
 }
 
-if ( !defined $RSYNCOPTS ) { $RSYNCOPTS = " -asl "; } # single word opts don't need the double quoting.
+if ( !defined $RSYNCOPTS ) { $RSYNCOPTS = " -as "; } # single word opts don't need the double quoting.
 elsif ( $RSYNCOPTS !~ /^'"-/ && $RSYNCOPTS !~ /^-/) {
   FATAL("You didn't have a leading '-' in your '--ro' string. 
   You need to supply the options exactly as you would with rsync, with 
@@ -3279,9 +3279,9 @@ or with quotes: [file\\ with\\ spaces] or ['file with spaces']
                                     number sent ONLY by pfp2 (another ToDo).
 --rdma ................ report rdma bytes thru the IB or IB-bonded interface
                               otherwise, only TCP/IP bytes will be reported.
---ro [s]  .................  options passed to rsync as single quoted string
+--ro [s]('-as') ...........  options passed to rsync as single quoted string
                               as follows: --ro='rsync options'
-                                        ie -ro='-aslz -I --size-only'
+                                        ie -ro='-asz -I --size-only'
 --checkperiod|cp [i] (3) ........ sets the period in seconds between updates
                 This is a best effort attempt.  If chunksize is set so small
          so 1000s of chunkfiles are created, file IO may lengthen this time.
@@ -3593,7 +3593,7 @@ The above command shows:
 
 === Good example 4 (Multihost)
 
-parsyncfp2 --verbose=2 --ro='-aslz' \\
+parsyncfp2 --verbose=2 --ro='-asz' \\
 --hosts="bigben=bridgit.ure.edu:/d1/in, \\
           pooki=bridgit.ure.edu:/d2/in, \\
         stunted=bridgit.ure.edu:/d3/in" \\
@@ -3605,7 +3605,7 @@ The above multihost command shows 3 SEND hosts (bigben, pooki, stunted) all send
 data to the REC host bridgit.ure.edu altho the data is being split among 3
 filesystems.  
 
-It shows the preferred way of defining the ro with '--ro=-aslz' and the 
+It shows the preferred way of defining the ro with '--ro=-asz' and the 
 '--dispo=l' option requests that the cachefiles be left alone.  In Multihost mode
 the chunk files MUST be left, since all the independent SEND hosts need to reference
 them until they're finished.
@@ -3658,7 +3658,8 @@ HELP
   close HLP;
   system("less -S $helpfile");
   unlink $helpfile;
-  die "Did that help?
+  print "Did that help?
   Send suggestions for improvement to <hjmangalam\@gmail.com>\n";
+  exit;
 }
 

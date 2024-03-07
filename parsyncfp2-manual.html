@@ -3,7 +3,7 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta name="generator" content="AsciiDoc 10.1.2">
-<title>parsyncfp2, a MultiHost parallel rsync wrapper</title>
+<title>parsyncfp2, a Single- or Multi-Host parallel rsync wrapper</title>
 <style type="text/css">
 /* Shared CSS for AsciiDoc xhtml11 and html5 backends */
 
@@ -766,7 +766,7 @@ asciidoc.install(3);
 </head>
 <body class="article">
 <div id="header">
-<h1>parsyncfp2, a MultiHost parallel rsync wrapper</h1>
+<h1>parsyncfp2, a Single- or Multi-Host parallel rsync wrapper</h1>
 <span id="author">Harry Mangalam</span><br>
 <span id="email" class="monospaced">&lt;<a href="mailto:harry.mangalam@uci.edu">harry.mangalam@uci.edu</a>&gt;</span><br>
 <span id="revnumber">version 2.59,</span>
@@ -782,9 +782,10 @@ asciidoc.install(3);
 <div class="sectionbody">
 <div class="paragraph"><p><em>parsyncfp2</em> intially started as a one-off bash script and moved to Perl (as <em>parsync</em>) when
 that became too cumbersome.
-I incorporated <a href="https://www.fpart.org/">fpart</a> and it became <em>parsyncfp</em>.
+I incorporated <a href="https://www.fpart.org/">fpart</a> and it became <em>parsyncfp</em>, running on a single host, transmitting to a single rsync receiver host.
 This MultiHost (MH) version allows it to run over multiple SEND hosts with shared storage to cooperatively
-send data much faster.  Rather than appending yet more acronymic characters to the name, I differentiated it with the major version number, so &#8230; <em>parsyncfp2</em> or <em>pfp2</em>.  In the docs and
+send data much faster. It still runs on a SingleHost and with a 64core AMD CPU, will happily saturate a 100Gbs pipe. In MultiHost mode, it can also send data to multiple storage endpoints simultaneously, as well as the same shared endpoint via multiple hosts.</p></div>
+<div class="paragraph"><p>Rather than appending yet more acronymic characters to the name, I differentiated it with the major version number, so &#8230; <em>parsyncfp2</em> or <em>pfp2</em>.  In the docs and
 src code, you may still find references to <em>parsync</em>, <em>parsyncfp</em>, as well as various abbriev&#8217;s (why does <em>abbrieviation</em> need one?).</p></div>
 </div>
 </div>
@@ -795,7 +796,7 @@ src code, you may still find references to <em>parsync</em>, <em>parsyncfp</em>,
 <a href="https://en.wikipedia.org/wiki/Rsync">rsync</a> to provide load balancing and parallel operation across
 network connections to substantially increase the amount of data it can send simultaneously.
 <em>pfp2</em> exploits parallel operation to decrease the impact of the <a href="https://en.wikipedia.org/wiki/Round-trip_delay">TCP Round Trip Time(rtt)</a> to significantly increase the total bandwidth of data across networks. For more information about the variables surrounding data transfer over networks, see
-<a href="https://tinyurl.com/yf33y6wg">How to Move Data</a>. Even on low-latency networks, it can speed large transfers by 4-10x.  However, it is not effective for small transfers, since the startup overhead will slow the effective throughput.</p></div>
+<a href="https://tinyurl.com/yf33y6wg">How to Move Data</a>. Even on low-latency networks, it can speed large transfers by 4-10x.  However it is not effective for small transfers, since the startup overhead will slow the effective throughput.</p></div>
 <div class="sect2">
 <h3 id="_general_features">2.1. General Features</h3>
 <div class="paragraph"><p>Versions &lt;2 allowed the SingleHost (SH) version to use 10s to 100s of rsyncs to increase
@@ -809,7 +810,7 @@ starts the transfer almost immediately, as soon as the first chunk is written.
 For large, deep trees, this can be quite useful.
 Also see the  <a href="#filesfrom">filesfrom</a> options below. <em>pfp2</em> also allows huge transfers to take place without the memory overflow sometimes seen with using a single rsync, due to splitting the memory required over many smaller rsync instances.</p></div>
 <div class="paragraph"><p>In both SH and MH, <em>pfp2</em> monitors the system <a href="https://www.howtogeek.com/194642/understanding-the-load-average-on-linux-and-other-unix-like-systems/">loadavg</a>.  It will suspend spawned rsyncs until the 1m load decreases below the cutoff, then UNsuspend them as the load decreases below it.</p></div>
-<div class="paragraph"><p>In the SH version, suspending the parent <em>pfp2</em> (with Ctrl+Z) will suspend all rsync children, regardless of current state. Similarly, if you kill the parent <em>pfp2</em> (Ctrl+C), all the children rsyncs will die with various cries of distress, depending on their states.  In the MH version, the spawned rsyncs are running independently on separate hosts and can only be controlled by commands issues to that host. ie you have to <em>ssh</em> to the host and suspend or kill the processes separately. A version where the hosts communicate via sockets is in the works and a <em>killer</em> script <strong>pfp2stop</strong> is written out at each MH invocation, which will ssh to each of the SEND and REC hosts to kill off all the rsync and <em>pfp2</em> processes running.</p></div>
+<div class="paragraph"><p>In the SH version, suspending the parent <em>pfp2</em> (with Ctrl+Z) will suspend all rsync children, regardless of current state. Similarly, if you kill the parent <em>pfp2</em> (Ctrl+C), all the children rsyncs will die with various cries of distress, depending on their states.  In the MH version, the spawned rsyncs are running independently on separate hosts and can only be controlled by commands issued to that host. ie you have to <em>ssh</em> to the host and suspend or kill the processes separately. A version where the hosts communicate via sockets is in the works and a <em>killer</em> script <strong>pfp2stop</strong> is written out at each MH invocation, which will ssh to each of the SEND and REC hosts to kill off all the rsync and <em>pfp2</em> processes running.</p></div>
 <div class="paragraph"><p><em>pfp2</em> can send files to any host with a standard rsync on the other end. In <em>normal</em>
 client mode (the remote rsync starts up on demand via ssh) the target syntax
 is either <em>host:/fully/qualified/path</em> or <em>host:path</em> (implying a dir off the
@@ -822,18 +823,7 @@ in the server&#8217;s <em>/etc/rsyncd.conf</em> and <em>/etc/rsyncd.secrets</em>
 The transfer will use whatever interface normal routing provides, normally
 set by the name of the target.  While rsync can be used for non-host-based
 transfers (between mounted filesystems), it works less well than for strictly network-based
-syncs. <em>pfp2</em> will honor requests to sync across local filesystems and shows low but significant  speedup (2x-4x).</p></div>
-<div class="admonitionblock">
-<table><tr>
-<td class="icon">
-<img src="./images/icons/tip.png" alt="Tip">
-</td>
-<td class="content">If you need to transfer data between mounted filesystems, I recommend the
-<a href="https://www.fpart.org/#fpsync">fpsync</a> tool
-contained in the <a href="https://www.fpart.org/">fpart</a> package above].  fpsync is simpler than <em>pfp2</em> and
-for that reason alone may be more attractive.</td>
-</tr></table>
-</div>
+syncs. <em>pfp2</em> will honor requests to sync across local filesystems and shows low but significant  speedup (2x-6x) on large transfers.</p></div>
 <div class="paragraph"><p><em>pfp2</em> only works on dirs and files that originate from the current dir (or
 specified via <em>--startdir</em>).  You cannot include dirs and files from
 discontinuous or higher-level dirs.  <em>pfp2</em> also <em>does not</em> use rsync&#8217;s
@@ -1028,7 +1018,7 @@ This option triggers a pause before executing to verify the command. The <em>--r
 string can pass any rsync option to all the rsyncs that will be started.  This allows options
 like <em>-z</em> (compression) or <em>--exclude-from</em> (filter out unwanted files). If you use this
 option, you&#8217;re responsible for supplying ALL the options and providing the files and formats required.
-The <em>--ro</em> string is NOT appended to the default <em>-asl</em> string. DO NOT use any <em>delete</em> options with this utility.  See <a href="#hints">Hints</a> below.
+The <em>--ro</em> string is NOT appended to the default <em>-as</em> string. DO NOT use any <em>delete</em> options with this utility.  See <a href="#hints">Hints</a> below.
 </p>
 </li>
 <li>
@@ -1542,11 +1532,11 @@ that the <em>--chunksize</em> format can use human abbreviations (m or M for Meg
 <h3 id="goodexample5">5.5. Good example 5 (MultiHost)</h3>
 <div class="literalblock">
 <div class="content monospaced">
-<pre>parsyncfp2 --verbose=2 --ro='-aslz' \
+<pre>parsyncfp2 --verbose=2 --ro='-asz' \
 --hosts="bigben=bridgit.ure.edu:/d1/in, \
           pooki=bridgit.ure.edu:/d2/in, \
         stunted=bridgit.ure.edu:/d3/in" \
---hostcheck --ro="-aslz"  --NP 4 --chunk 15G \
+--hostcheck --ro="-asz"  --NP 4 --chunk 15G \
 --check 5 --dispo=l --interface=wlp3s0 \
 --commondir=/home/hjm/pfp2 --startdir /home/hjm/pfp2 \
 dir1 dir2 dir3 dir4  POD::/</pre>
@@ -1586,7 +1576,7 @@ which would distribute the same 'POD::' suffix to all REC hosts.</pre>
 <div class="ulist"><ul>
 <li>
 <p>
-the preferred way of defining the rsyncopts with <em>--ro=-aslz</em>
+the preferred way of defining the rsyncopts with <em>--ro=-asz</em>
 </p>
 </li>
 <li>
@@ -1815,7 +1805,7 @@ the obvious '##: ' in the code and 'grep -n '\##: ' pfp2.</p></div>
 <div id="footer-text">
 Version 2.59<br>
 Last updated
- 2024-01-20 17:53:05 PST
+ 2024-03-07 08:31:57 PST
 </div>
 </div>
 </body>

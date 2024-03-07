@@ -1,4 +1,11 @@
 ### Changes, moved from top of pfp code
+
+03-07-24
+minor edits suggested by github comments (thanks Lucas Nussbaum)
+- rsync option '-asl' is redundant as '-a' includes '-l'
+- random 'cp' inserted to README at top (thanks Jakub Wilk)
+- used 'die' inapropriately at '--help' termination
+
 2.24.23
 
 [FIXED, finally - use kompare to track down weird paren deletions] using 2.249, with 3 send hosts, 2 of them aren't starting correctly bc of .. something.
