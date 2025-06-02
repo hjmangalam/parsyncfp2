@@ -72,6 +72,10 @@ Should the above commands not fulfill the requirements or be missing from your s
 
 ## Changes
 
+### 2.59A
+- fixed stupid, small, but fatal, hack introduced while fiddling with multi-host 
+  POD target which caused single-host commands to skip parse_rsync_target()
+
 ### stats
 - no change to pfp2, but added sample size estimation to stats.
 

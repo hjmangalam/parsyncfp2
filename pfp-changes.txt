@@ -1,16 +1,43 @@
 ### Changes, moved from top of pfp code
+06.02.25
+Version 259A
+[x] fix stupid POD hack that caused singlehost runs to fail - only functional change since the bigfiles/zot/rampup edits are ready to go in Version 260
+[x] bunch of print removals and cleanup
+
+03.14.24
+[ ] add a fn to hostcheck to make sure that the names and UIDs are identical across all send hosts. and if not, display them [grep $USER /etc/passwd | scut -f='0 2 3' -d :]
+
+[x] the --zotfile option finally nailed down and is working. Scheduling works to keep 
+    the minimum tarballs around on both local and remote sides.
+    However, it's SingleHost-only for now and probably will be forever.
+
+[x] an optimization has been added to start moving data ASAP.  The first chunk detected 
+    is split into NP parts and immediately sent to avoid having to wait for all NP 
+    chunks to fulfill the bandwidth requests.  If the first chunk is determined to 
+    be a zotfile, it's skipped so that the zotfile processing occurs downstream as desired.
+
+[x] a silent 'bigfile' option has been added: if there are files larger than chunksize, 
+    those files are sent as soon as fpart is finished chunking the payload.
+    
+[ ] check that the BIGFILES exceptions only send on the master host; shouldn't send any 
+    files to the slave hosts.
+    
+[x] the requirement for the Perl module Statistics::Descriptive has been dropped (part of an 
+    edge-case option for 'scut')
+    
+[x] lots of little cleanups and text editing to make things clearer.
+
+[x] more mods to the manual.
+
+
 
 03-07-24
 minor edits suggested by github comments (thanks Lucas Nussbaum)
 - rsync option '-asl' is redundant as '-a' includes '-l'
 - random 'cp' inserted to README at top (thanks Jakub Wilk)
-- used 'die' inapropriately at '--help' termination
+- used 'die' inappropriately at '--help' termination
 
 2.24.23
-
-[FIXED, finally - use kompare to track down weird paren deletions] using 2.249, with 3 send hosts, 2 of them aren't starting correctly bc of .. something.
-If theyre started after fpart has produced some chunks they work, so they're failing to start correctly.  
-
 [FIXED] the creation of the remote ssh  SEND host cmd is duplicating the '--commondir' flag.  Doesn't hurt, but cosmetically offensive.
 
   [ssh c07n091 "export PATH=/mnt/HPC_T0/PKTEST/.pfp2:~/bin:/bin:/usr/sbin:/sbin:/usr/bin:$PATH; \
@@ -41,6 +68,7 @@ better format?
 [x?] at iter, sometimes get this error, which must be coming from the remote SEND host:
 bash: /mnt/HPC_T0/PKTEST/.pfp2/pfp2.248: /usr/bin/env: bad interpreter: Not a directory
 Does this need a delay or sync to make sure the copy is complete?
+
 [x] $MYFPRNG is used to signal that FPART is still running - provides the same functionality as FPART_IS_DONE, simplify...
 FPART_IS_DONE = 1 when it ends
 $MYFPRNG = 0 when it ends;  change to use FPART_IS_DONE
@@ -57,7 +85,7 @@ if command; then command; else command; fi is not significantly longer and will 
 
 1-23-23
 
-[fixed] Looks like you've never asked for the checkhost option - I think the checkfile is deleted when everythign else is.
+[x] Looks like you've never asked for the checkhost option - I think the checkfile is deleted when everythign else is.
 
 [x] would be nice if at least on SH mode, if an rsync PID was still active, it would contnue reporting until it ended. (when doing unsplit huge files, xfer of those files can take much loonger than pfp2 itself.) Loop thru get_rPIDs(), until the PIDs go to 0.
 
